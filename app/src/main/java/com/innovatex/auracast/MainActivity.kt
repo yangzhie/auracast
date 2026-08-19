@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import com.innovatex.auracast.ui.screens.AccessibilityScreen
+import com.innovatex.auracast.ui.screens.JourneyScreen
 import com.innovatex.auracast.ui.screens.RouteScreen
 import com.innovatex.auracast.ui.screens.SetupCheckScreen
 import com.innovatex.auracast.ui.screens.RouteConfirmScreen
@@ -21,7 +22,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             AuracastTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    RouteConfirmScreen(modifier = Modifier.padding(innerPadding))
+                    JourneyScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
