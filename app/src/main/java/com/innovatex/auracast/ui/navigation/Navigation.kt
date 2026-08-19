@@ -15,15 +15,30 @@ import com.innovatex.auracast.ui.screens.JourneyScreen
 import com.innovatex.auracast.ui.screens.RouteConfirmScreen
 import com.innovatex.auracast.ui.screens.RouteScreen
 import com.innovatex.auracast.ui.screens.SetupCheckScreen
+import com.innovatex.auracast.ui.screens.JourneyPhase
+import com.innovatex.auracast.ui.screens.DevMenuScreen
 import kotlinx.serialization.Serializable
 
 @Serializable object Home
+
 @Serializable object SetupCheck
+
 @Serializable object RouteSelect
+
 @Serializable data class RouteConfirm(val routeId: String)
-@Serializable data class Journey(val routeId: String)
+
 @Serializable object Arrived
+
 @Serializable object Accessibility
+
+@Serializable
+data class Journey(
+    val routeId: String,
+    val stopIndex: Int = 2,
+    val phaseName: String = JourneyPhase.RECEIVING.name
+)
+
+@Serializable object DevMenu
 
 @Composable
 fun Navigation(
@@ -32,7 +47,7 @@ fun Navigation(
 ) {
     NavHost(
         navController = navController,
-        startDestination = Home,
+        startDestination = DevMenu,
         modifier = modifier
     ) {
         composable<Home> {
@@ -67,10 +82,10 @@ fun Navigation(
             val args = backStackEntry.toRoute<Journey>()
             JourneyScreen(
                 route = SampleData.routeById(args.routeId),
+                currentStopIndex = args.stopIndex,
+                phase = JourneyPhase.valueOf(args.phaseName),
                 onEndJourney = {
-                    navController.navigate(Arrived) {
-                        popUpTo<Home>()
-                    }
+                    navController.navigate(Arrived) { popUpTo<Home>() }
                 },
                 onOpenAccessibility = { navController.navigate(Accessibility) }
             )
@@ -90,6 +105,10 @@ fun Navigation(
             AccessibilityScreen(
                 onDone = { navController.popBackStack() }
             )
+        }
+
+        composable<DevMenu> {
+            DevMenuScreen(onGo = { navController.navigate(it) })
         }
     }
 }
