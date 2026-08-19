@@ -40,6 +40,7 @@ import com.innovatex.auracast.ui.theme.Ink
 import com.innovatex.auracast.ui.theme.Muted
 import com.innovatex.auracast.ui.theme.ReceivingGreen
 import com.innovatex.auracast.ui.theme.RouteLine
+import com.innovatex.auracast.ui.components.RouteBadge
 
 @Composable
 fun RouteScreen(
@@ -156,22 +157,5 @@ fun RouteCard(
                 tint = ReceivingGreen
             )
         }
-    }
-}
-
-@Composable
-fun RouteBadge(routeNumber: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(5.dp))
-            .background(Ink)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-    ) {
-        Text(
-            text = routeNumber,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.ExtraBold,
-            color = Color.White
-        )
     }
 }

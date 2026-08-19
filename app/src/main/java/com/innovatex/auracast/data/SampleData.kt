@@ -1,7 +1,6 @@
 package com.innovatex.auracast.data
 
 object SampleData {
-
     private val route86Outbound = listOf(
         Stop("s8", "Parliament", "Stop 8 · Spring St", "86-08"),
         Stop("s10", "Nicholson Street", "Stop 10 · Gertrude St", null),
@@ -17,4 +16,6 @@ object SampleData {
         TransitRoute("86-in", "86", "To Waterfront City", route86Outbound.reversed()),
         TransitRoute("96-out", "96", "To Brunswick East", emptyList())
     )
+
+    fun routeById(id: String): TransitRoute = routes.first { it.id == id }
 }

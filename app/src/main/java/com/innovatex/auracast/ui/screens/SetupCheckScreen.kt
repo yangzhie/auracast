@@ -35,7 +35,10 @@ import com.innovatex.auracast.ui.theme.SignalAmber
 import com.innovatex.auracast.ui.theme.OnSignalAmber
 
 @Composable
-fun SetupCheckScreen(modifier: Modifier = Modifier) {
+fun SetupCheckScreen(
+    modifier: Modifier = Modifier,
+    onContinue: () -> Unit = {}
+) {
     Column(
         modifier = modifier
             .fillMaxSize()

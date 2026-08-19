@@ -37,7 +37,10 @@ enum class TextSizeOption(val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AccessibilityScreen(modifier: Modifier = Modifier) {
+fun AccessibilityScreen(
+    modifier: Modifier = Modifier,
+    onDone: () -> Unit = {}
+) {
     var textSize by remember { mutableStateOf(TextSizeOption.LARGE) }
     var vibrateOnConnect by remember { mutableStateOf(true) }
     var flashOnConnect by remember { mutableStateOf(false) }

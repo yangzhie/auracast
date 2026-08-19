@@ -24,6 +24,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.innovatex.auracast.data.Stop
+import androidx.compose.ui.text.font.FontWeight
+import com.innovatex.auracast.ui.theme.Ink
 import com.innovatex.auracast.ui.theme.Ink2
 import com.innovatex.auracast.ui.theme.Muted
 import com.innovatex.auracast.ui.theme.ReceivingGreen
@@ -216,17 +218,37 @@ private fun Pill(
 fun RouteBadgeRow(
     routeNumber: String,
     destination: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trailingContent: @Composable (() -> Unit)? = null
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        com.innovatex.auracast.ui.screens.RouteBadge(routeNumber)
+        RouteBadge(routeNumber)
         Spacer(Modifier.width(12.dp))
         Text(
             text = destination,
-            style = MaterialTheme.typography.titleMedium
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f)
+        )
+        trailingContent?.invoke()
+    }
+}
+
+@Composable
+fun RouteBadge(routeNumber: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(Ink)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = routeNumber,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color.White
         )
     }
 }

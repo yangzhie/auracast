@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.innovatex.auracast.data.SampleData
 import com.innovatex.auracast.data.Stop
@@ -38,7 +40,8 @@ fun JourneyScreen(
     route: TransitRoute = SampleData.routes.first(),
     currentStopIndex: Int = 2,
     phase: JourneyPhase = JourneyPhase.RECEIVING,
-    onEndJourney: () -> Unit = {}
+    onEndJourney: () -> Unit = {},
+    onOpenAccessibility: () -> Unit = {}
 ) {
     val currentStop = route.stops[currentStopIndex]
     val nextCovered = route.stops
@@ -50,7 +53,15 @@ fun JourneyScreen(
         RouteBadgeRow(
             routeNumber = route.routeNumber,
             destination = route.destination,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+            trailingContent = {
+                IconButton(onClick = onOpenAccessibility) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Accessibility settings"
+                    )
+                }
+            }
         )
 
         Column(
