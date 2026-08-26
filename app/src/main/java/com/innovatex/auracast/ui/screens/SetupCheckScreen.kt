@@ -1,5 +1,8 @@
 package com.innovatex.auracast.ui.screens
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,9 +29,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.viewmodel.compose.viewModel
+
+import com.innovatex.auracast.components.SetupCheckViewModel
 import com.innovatex.auracast.ui.theme.Muted
 import com.innovatex.auracast.ui.theme.ReceivingGreen
 import com.innovatex.auracast.ui.theme.SignalAmber
@@ -39,6 +47,29 @@ fun SetupCheckScreen(
     modifier: Modifier = Modifier,
     onContinue: () -> Unit = {}
 ) {
+    // Get current context
+    val context = LocalContext.current
+    // Initialize view model
+    val viewModel: SetupCheckViewModel = viewModel()
+
+    // OS shows the permissions prompt
+    // ActivityResult is general mechanism for any interaction with another screen
+    val permLauncher = rememberLauncherForActivityResult(
+        // Defines what goes in and out
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        viewModel.refresh(context)
+    }
+
+    // Status of the view model's current context
+    val status = viewModel.status
+
+    // Refreshes the context every time screen comes back to foreground
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        // Pass current context to refresh
+        viewModel.refresh(context)
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -58,27 +89,34 @@ fun SetupCheckScreen(
         Spacer(Modifier.height(20.dp))
 
         SetupCheckRow(
-            icon = Icons.Default.Check,
-            iconBackground = ReceivingGreen,
-            iconTint = Color.White,
+            isSet = status.bluetoothReady,
             title = "Bluetooth",
-            detail = "On"
+            detail = if (status.bluetoothReady) {
+                "On"
+            } else {
+                "Turn Bluetooth on and allow this app to use it"
+            }
         )
         HorizontalDivider()
         SetupCheckRow(
-            icon = Icons.Default.Check,
-            iconBackground = ReceivingGreen,
-            iconTint = Color.White,
+            isSet = status.locationGranted,
             title = "Location",
-            detail = "Allowed while using the app"
+            detail = if (status.locationGranted) {
+                "Allowed while using the app"
+            } else {
+                "Needed to know which stop you're at"
+            }
         )
         HorizontalDivider()
         SetupCheckRow(
-            icon = Icons.Default.Warning,
-            iconBackground = SignalAmber,
-            iconTint = OnSignalAmber,
+            isSet = status.hearingDeviceConnected,
             title = "Hearing device",
-            detail = "Not connected. Connect LE Audio hearing aids or earbuds — your phone passes announcements to them, and can't play them through its own speaker."
+            detail = if (status.hearingDeviceConnected) {
+                "Connected and ready"
+            } else {
+                "Connect LE Audio hearing aids or earbuds — your phone passes " +
+                        "announcements to them, and can't play them through its own speaker."
+            }
         )
 
         Spacer(Modifier.height(20.dp))
@@ -105,19 +143,29 @@ fun SetupCheckScreen(
         Spacer(Modifier.weight(1f))
 
         Button(
-            onClick = {},
+            onClick = {
+                if (status.allReady) {
+                    onContinue()
+                } else {
+                    permLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.BLUETOOTH_SCAN,
+                            Manifest.permission.ACCESS_FINE_LOCATION
+                        )
+                    )
+                }
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Connect a device")
+            Text(if (status.allReady) "Continue" else "Grant permissions")
         }
     }
 }
 
 @Composable
 fun SetupCheckRow(
-    icon: ImageVector,
-    iconBackground: Color,
-    iconTint: Color,
+    isSet: Boolean,
     title: String,
     detail: String,
     modifier: Modifier = Modifier
@@ -131,13 +179,13 @@ fun SetupCheckRow(
             modifier = Modifier
                 .size(28.dp)
                 .clip(CircleShape)
-                .background(iconBackground),
+                .background(if (isSet) ReceivingGreen else SignalAmber),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = icon,
+                imageVector = if (isSet) Icons.Default.Check else Icons.Default.Warning,
                 contentDescription = null,
-                tint = iconTint,
+                tint = if (isSet) Color.White else OnSignalAmber,
                 modifier = Modifier.size(18.dp)
             )
         }
