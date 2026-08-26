@@ -6,6 +6,7 @@ data class DeviceStatus(
     val locationGranted: Boolean = false,
     val hearingDeviceConnected: Boolean = false,
 ) {
+    // Derived from all three bools
     val allReady: Boolean
         get() = bluetoothReady && locationGranted && hearingDeviceConnected
 }

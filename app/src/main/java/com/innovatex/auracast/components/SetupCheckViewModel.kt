@@ -4,6 +4,8 @@ import android.Manifest
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -33,16 +35,23 @@ class SetupCheckViewModel : ViewModel() {
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
-        // Context manager for status
+        // Context manager for the bluetooth
         val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
+
+        // Context manager for the audio/connected devices
+        val audioManager = context.getSystemService(AudioManager::class.java)
+        // Get all Bluetooth LE connected devices
+        val audioDevices = audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        val hasBLEAudio = audioDevices?.any {
+            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET || it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+        } == true
 
         // Modify status state respective to DeviceStatus
         status = DeviceStatus(
             // Device must give app bluetooth perms + have bluetooth
             bluetoothReady = hasBluetoothPermission && bluetoothManager?.adapter?.isEnabled == true,
             locationGranted = hasLocationPermission,
-            // TODO: re-work later
-            hearingDeviceConnected = false
+            hearingDeviceConnected = hasBLEAudio
         )
     }
 }
