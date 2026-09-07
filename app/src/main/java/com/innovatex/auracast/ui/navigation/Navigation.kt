@@ -17,6 +17,7 @@ import com.innovatex.auracast.ui.screens.RouteScreen
 import com.innovatex.auracast.ui.screens.SetupCheckScreen
 import com.innovatex.auracast.ui.screens.JourneyPhase
 import com.innovatex.auracast.ui.screens.DevMenuScreen
+import com.innovatex.auracast.ui.screens.ScanDebugScreen
 import kotlinx.serialization.Serializable
 
 @Serializable object Home
@@ -30,6 +31,8 @@ import kotlinx.serialization.Serializable
 @Serializable object Arrived
 
 @Serializable object Accessibility
+
+@Serializable object ScanDebug
 
 @Serializable
 data class Journey(
@@ -109,6 +112,10 @@ fun Navigation(
 
         composable<DevMenu> {
             DevMenuScreen(onGo = { navController.navigate(it) })
+        }
+
+        composable<ScanDebug> {
+            ScanDebugScreen()
         }
     }
 }

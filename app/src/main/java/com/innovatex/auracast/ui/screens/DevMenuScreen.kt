@@ -20,6 +20,7 @@ import com.innovatex.auracast.ui.navigation.Home
 import com.innovatex.auracast.ui.navigation.Journey
 import com.innovatex.auracast.ui.navigation.RouteConfirm
 import com.innovatex.auracast.ui.navigation.RouteSelect
+import com.innovatex.auracast.ui.navigation.ScanDebug
 import com.innovatex.auracast.ui.navigation.SetupCheck
 
 @Composable
@@ -37,7 +38,8 @@ fun DevMenuScreen(
         "06b · Journey — no coverage" to Journey("86-out", 3, "AT_UNCOVERED"),
         "07 · Journey — travelling" to Journey("86-out", 2, "TRAVELLING"),
         "08 · Arrived" to Arrived,
-        "10 · Accessibility" to Accessibility
+        "10 · Accessibility" to Accessibility,
+        "Scan debug" to ScanDebug,
     )
 
     Column(
