@@ -15,4 +15,7 @@ sealed interface MatchDecision {
 
     // Nothing has changed
     data object DoNothing : MatchDecision
+
+    // Returns an error
+    data object Fault : MatchDecision
 }
