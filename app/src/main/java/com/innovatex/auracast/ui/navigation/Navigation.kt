@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.innovatex.auracast.data.SampleData
+import com.innovatex.auracast.core.JourneyPhase
 import com.innovatex.auracast.ui.screens.AccessibilityScreen
 import com.innovatex.auracast.ui.screens.ArrivedScreen
 import com.innovatex.auracast.ui.screens.HomeScreen
@@ -15,7 +16,6 @@ import com.innovatex.auracast.ui.screens.JourneyScreen
 import com.innovatex.auracast.ui.screens.RouteConfirmScreen
 import com.innovatex.auracast.ui.screens.RouteScreen
 import com.innovatex.auracast.ui.screens.SetupCheckScreen
-import com.innovatex.auracast.ui.screens.JourneyPhase
 import com.innovatex.auracast.ui.screens.DevMenuScreen
 import com.innovatex.auracast.ui.screens.ScanDebugScreen
 import kotlinx.serialization.Serializable
