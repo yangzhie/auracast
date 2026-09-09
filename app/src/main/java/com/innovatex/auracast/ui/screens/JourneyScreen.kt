@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.innovatex.auracast.core.JourneyPhase
 import com.innovatex.auracast.data.SampleData
 import com.innovatex.auracast.data.Stop
 import com.innovatex.auracast.data.TransitRoute
@@ -26,13 +27,6 @@ import com.innovatex.auracast.ui.components.RouteSpine
 import com.innovatex.auracast.ui.components.StatusBand
 import com.innovatex.auracast.ui.components.StopState
 import com.innovatex.auracast.ui.theme.AlertRed
-
-enum class JourneyPhase {
-    SEARCHING,
-    RECEIVING,
-    TRAVELLING,
-    AT_UNCOVERED
-}
 
 @Composable
 fun JourneyScreen(
@@ -100,6 +94,15 @@ fun JourneyScreen(
                     } ?: "This stop isn't fitted yet. Nothing is wrong.",
                     style = BandStyles.NoCoverage
                 )
+
+                JourneyPhase.DROP_OUT -> StatusBand(
+                    kicker = "The connection has dropped out",
+                    headline = currentStop.name,
+                    detail = nextCovered?.let {
+                        "You have been disconnected from the Auracast broadcast — trying to reconnect."
+                    } ?: "You have been disconnected from the Auracast broadcast.",
+                    style = BandStyles.NoCoverage
+                )
             }
 
             Spacer(Modifier.height(20.dp))
@@ -148,6 +151,7 @@ private fun stopStateFor(
             JourneyPhase.RECEIVING -> StopState.RECEIVING
             JourneyPhase.AT_UNCOVERED -> StopState.AT_UNCOVERED
             JourneyPhase.TRAVELLING -> StopState.PASSED
+            JourneyPhase.DROP_OUT -> StopState.SEARCHING
         }
 
         else -> StopState.UPCOMING

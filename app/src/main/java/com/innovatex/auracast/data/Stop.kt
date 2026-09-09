@@ -4,8 +4,8 @@ data class Stop(
     val id: String,
     val name: String,
     val stopLabel: String,
-    val broadcastId: String?
+    val broadcast: BroadcastIdentity?
 ) {
     val hasAuracast: Boolean
-        get() = broadcastId != null
+        get() = broadcast != null
 }
