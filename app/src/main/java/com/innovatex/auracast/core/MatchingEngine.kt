@@ -24,6 +24,12 @@ object MatchingEngine {
 
         // Case: the stop has no Auracast transmitter -> do nothing
         if (!targetStop.hasAuracast) {
+            // First check if next covered stop has shown up
+            val nextStop = state.nextAuracastEnabledStop
+            if (nextStop != null && visible.any { StopMatcher.matches(it.metadata, nextStop) }) {
+                return MatchDecision.Advance
+            }
+
             return MatchDecision.DoNothing
         }
 

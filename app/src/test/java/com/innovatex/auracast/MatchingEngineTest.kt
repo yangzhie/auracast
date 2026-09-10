@@ -145,6 +145,29 @@ class MatchingEngineTest {
         assertTrue(decision is MatchDecision.Connect)
     }
 
+    @Test
+    fun `advances from an uncovered stop when the next covered transmitter appears`() {
+        // Index 3 is Langridge Street, unfitted. Index 4 is Johnston, transmitter 3.
+        val decision = MatchingEngine.decide(
+            state = searchingAt(stopIndex = 3),
+            visible = listOf(broadcast(stopIndex = 3)),
+            currentTime = 1_000L
+        )
+
+        assertEquals(MatchDecision.Advance, decision)
+    }
+
+    @Test
+    fun `waits at an uncovered stop while nothing is visible`() {
+        val decision = MatchingEngine.decide(
+            state = searchingAt(stopIndex = 3),
+            visible = emptyList(),
+            currentTime = 1_000L
+        )
+
+        assertEquals(MatchDecision.DoNothing, decision)
+    }
+
     // ---------- helpers ----------
 
     private companion object {
