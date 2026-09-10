@@ -1,5 +1,6 @@
 package com.innovatex.auracast.ui.screens
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,13 +13,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.innovatex.auracast.bluetooth.JourneyViewModel
 import com.innovatex.auracast.core.JourneyPhase
-import com.innovatex.auracast.data.SampleData
+import com.innovatex.auracast.core.JourneyState
 import com.innovatex.auracast.data.Stop
 import com.innovatex.auracast.data.TransitRoute
 import com.innovatex.auracast.ui.components.BandStyles
@@ -28,19 +35,69 @@ import com.innovatex.auracast.ui.components.StatusBand
 import com.innovatex.auracast.ui.components.StopState
 import com.innovatex.auracast.ui.theme.AlertRed
 
+/**
+ * Live journey. Owns the ViewModel, which owns the scanner and drives
+ * state through MatchingEngine.
+ */
 @Composable
-fun JourneyScreen(
+fun JourneyRoute(
+    route: TransitRoute,
     modifier: Modifier = Modifier,
-    route: TransitRoute = SampleData.routes.first(),
-    currentStopIndex: Int = 2,
-    phase: JourneyPhase = JourneyPhase.RECEIVING,
     onEndJourney: () -> Unit = {},
     onOpenAccessibility: () -> Unit = {}
 ) {
-    val currentStop = route.stops[currentStopIndex]
-    val nextCovered = route.stops
-        .drop(currentStopIndex + 1)
-        .firstOrNull { it.hasAuracast }
+    val context = LocalContext.current
+    val viewModel: JourneyViewModel = viewModel()
+
+    // Keyed on route id so a different route restarts the journey.
+    LaunchedEffect(route.id) {
+        viewModel.startJourney(context, route)
+    }
+
+    val state = viewModel.state
+
+    if (state == null) {
+        Box(
+            modifier = modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Starting journey…",
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+        return
+    }
+
+    JourneyScreen(
+        state = state,
+        modifier = modifier,
+        onEndJourney = {
+            viewModel.endJourney()
+            onEndJourney()
+        },
+        onOpenAccessibility = onOpenAccessibility
+    )
+}
+
+/**
+ * Stateless. Renders whatever JourneyState it's given, so the dev menu can
+ * feed it a hand-built state and the live route can feed it a real one.
+ */
+@Composable
+fun JourneyScreen(
+    state: JourneyState,
+    modifier: Modifier = Modifier,
+    onEndJourney: () -> Unit = {},
+    onOpenAccessibility: () -> Unit = {}
+) {
+    val route = state.route
+    val phase = state.phase
+    val currentStopIndex = state.currentStopIndex
+    val nextCovered = state.nextAuracastEnabledStop
+
+    // Null once the journey has run past the end of the route.
+    val currentStop = state.currentTargetStop ?: return
 
     Column(modifier = modifier.fillMaxSize()) {
 
@@ -96,12 +153,10 @@ fun JourneyScreen(
                 )
 
                 JourneyPhase.DROP_OUT -> StatusBand(
-                    kicker = "The connection has dropped out",
-                    headline = currentStop.name,
-                    detail = nextCovered?.let {
-                        "You have been disconnected from the Auracast broadcast — trying to reconnect."
-                    } ?: "You have been disconnected from the Auracast broadcast.",
-                    style = BandStyles.NoCoverage
+                    kicker = "Not receiving",
+                    headline = "Connection dropped",
+                    detail = "Trying to reconnect to ${currentStop.name}.",
+                    style = BandStyles.Fault
                 )
             }
 

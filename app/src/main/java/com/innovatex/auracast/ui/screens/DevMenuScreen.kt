@@ -22,6 +22,7 @@ import com.innovatex.auracast.ui.navigation.RouteConfirm
 import com.innovatex.auracast.ui.navigation.RouteSelect
 import com.innovatex.auracast.ui.navigation.ScanDebug
 import com.innovatex.auracast.ui.navigation.SetupCheck
+import com.innovatex.auracast.ui.navigation.JourneyPreview
 
 @Composable
 fun DevMenuScreen(
@@ -33,13 +34,14 @@ fun DevMenuScreen(
         "02 · Setup check" to SetupCheck,
         "03 · Route select" to RouteSelect,
         "04 · Confirm journey" to RouteConfirm("86-out"),
-        "05 · Journey — searching" to Journey("86-out", 2, "SEARCHING"),
-        "06 · Journey — receiving" to Journey("86-out", 2, "RECEIVING"),
-        "06b · Journey — no coverage" to Journey("86-out", 3, "AT_UNCOVERED"),
-        "07 · Journey — travelling" to Journey("86-out", 2, "TRAVELLING"),
+        "05 · Journey — searching" to JourneyPreview("86-out", 2, "SEARCHING"),
+        "06 · Journey — receiving" to JourneyPreview("86-out", 2, "RECEIVING"),
+        "06b · Journey — no coverage" to JourneyPreview("86-out", 3, "AT_UNCOVERED"),
+        "07 · Journey — travelling" to JourneyPreview("86-out", 2, "TRAVELLING"),
         "08 · Arrived" to Arrived,
         "10 · Accessibility" to Accessibility,
         "Scan debug" to ScanDebug,
+        "LIVE journey — scanner on" to Journey("86-out"),
     )
 
     Column(
