@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.innovatex.auracast.bluetooth.DiscoveredBroadcast
+import com.innovatex.auracast.bluetooth.GattProbe
 import com.innovatex.auracast.bluetooth.ScanViewModel
 import com.innovatex.auracast.ui.theme.Muted
 
@@ -60,6 +61,18 @@ fun ScanDebugScreen(modifier: Modifier = Modifier) {
             }
             OutlinedButton(onClick = { viewModel.clear() }) {
                 Text("Clear")
+            }
+            OutlinedButton(
+                onClick = { GattProbe.listBondedDevices(context) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("List bonded")
+            }
+            OutlinedButton(
+                onClick = { GattProbe.probe(context, "JM320") },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("GATT probe")
             }
         }
 
