@@ -74,6 +74,12 @@ fun ScanDebugScreen(modifier: Modifier = Modifier) {
             ) {
                 Text("GATT probe")
             }
+            OutlinedButton(
+                onClick = { GattProbe.testControlPointWrite() },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("BASS write")
+            }
         }
 
         Spacer(Modifier.height(16.dp))

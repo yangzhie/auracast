@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.util.Log
 import java.util.UUID
@@ -113,7 +114,74 @@ object GattProbe {
         gatt = null
     }
 
+    /**
+     * Writes a minimal Remove Source to the BASS control point.
+     *
+     * Two bytes: opcode 0x02, then a source ID. Using a source ID that
+     * almost certainly doesn't exist — we don't care whether the operation
+     * succeeds, only whether Android's stack lets the write through at all.
+     */
+    fun testControlPointWrite() {
+        val g = gatt
+        if (g == null) {
+            Log.w(TAG, "Not connected — run probe() first")
+            return
+        }
+
+        val bass = g.getService(BASS_SERVICE)
+        val controlPoint = bass?.getCharacteristic(BASS_CONTROL_POINT)
+        if (controlPoint == null) {
+            Log.w(TAG, "No BASS control point")
+            return
+        }
+
+        val payload = byteArrayOf(0x02, 0x63)  // Remove Source, id 99
+
+        Log.i(TAG, "──── Writing Remove Source (0x02, 0x63) ────")
+
+        try {
+            val status = g.writeCharacteristic(
+                controlPoint,
+                payload,
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            )
+            Log.i(TAG, "writeCharacteristic returned ${statusName(status)}")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException on write", e)
+        }
+    }
+
+    private fun statusName(status: Int): String = when (status) {
+        BluetoothStatusCodes.SUCCESS -> "SUCCESS ($status)"
+        BluetoothStatusCodes.ERROR_MISSING_BLUETOOTH_CONNECT_PERMISSION -> "MISSING_CONNECT_PERMISSION ($status)"
+        BluetoothStatusCodes.ERROR_GATT_WRITE_NOT_ALLOWED -> "WRITE_NOT_ALLOWED ($status)"
+        BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY -> "WRITE_BUSY ($status)"
+        BluetoothStatusCodes.ERROR_DEVICE_NOT_BONDED -> "DEVICE_NOT_BONDED ($status)"
+        else -> "code $status"
+    }
+
     private val callback = object : BluetoothGattCallback() {
+        override fun onCharacteristicWrite(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            if (characteristic.uuid != BASS_CONTROL_POINT) {
+                return
+            }
+
+            Log.i(TAG, "──── Control point write result ────")
+            when (status) {
+                BluetoothGatt.GATT_SUCCESS ->
+                    Log.i(TAG, "GATT_SUCCESS — the stack allowed the write. Gate 2 is OPEN.")
+                BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION ->
+                    Log.w(TAG, "INSUFFICIENT_AUTHENTICATION ($status) — link not encrypted enough")
+                BluetoothGatt.GATT_WRITE_NOT_PERMITTED ->
+                    Log.w(TAG, "WRITE_NOT_PERMITTED ($status)")
+                else ->
+                    Log.w(TAG, "status $status — see BluetoothGatt constants")
+            }
+        }
 
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             Log.i(TAG, "Connection state: ${stateName(newState)} (status $status)")
