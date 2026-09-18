@@ -5,6 +5,7 @@ import com.innovatex.auracast.data.TransitRoute
 
 enum class JourneyPhase {
     SEARCHING,
+    CONNECTING,
     RECEIVING,
     TRAVELLING,
     AT_UNCOVERED,

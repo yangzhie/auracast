@@ -51,6 +51,7 @@ fun HomeScreen(
     onPlanJourney: () -> Unit = {},
     onHowItWorks: () -> Unit = {}
 ) {
+
     val fittedStops = remember {
         SampleData.routes
             .flatMap { it.stops }
@@ -58,8 +59,11 @@ fun HomeScreen(
             .distinctBy { it.id }
             .size
     }
+
     val liveRoutes = remember {
-        SampleData.routes.count { it.coveredStopCount > 0 }
+        SampleData.routes.count {
+            it.coveredStopCount > 0
+        }
     }
 
     Box(
@@ -67,91 +71,172 @@ fun HomeScreen(
             .fillMaxSize()
             .background(Ink)
     ) {
-        Column(modifier = modifier.fillMaxSize()) {
+
+        Column(
+            modifier = modifier.fillMaxSize()
+        ) {
 
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 28.dp)
+                    .verticalScroll(
+                        rememberScrollState()
+                    )
+                    .padding(
+                        horizontal = 28.dp
+                    )
             ) {
-                Spacer(Modifier.height(28.dp))
+
+                Spacer(
+                    Modifier.height(28.dp)
+                )
 
                 BroadcastMark(
                     modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
+                        .align(
+                            Alignment.CenterHorizontally
+                        )
                         .size(190.dp)
                 )
 
-                Spacer(Modifier.height(32.dp))
+                Spacer(
+                    Modifier.height(32.dp)
+                )
 
                 Text(
                     text = "AURACAST COMPANION",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = SignalAmber,
-                    letterSpacing = 2.4.sp
+                    style =
+                        MaterialTheme.typography.labelMedium,
+                    color =
+                        SignalAmber,
+                    letterSpacing =
+                        2.4.sp
                 )
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(
+                    Modifier.height(12.dp)
+                )
 
                 Text(
                     text = "Never miss\nyour stop.",
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    lineHeight = 42.sp
+                    style =
+                        MaterialTheme.typography.displaySmall,
+                    fontWeight =
+                        FontWeight.ExtraBold,
+                    color =
+                        Color.White,
+                    lineHeight =
+                        42.sp
                 )
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(
+                    Modifier.height(14.dp)
+                )
 
                 Text(
-                    text = "Announcements go straight to your hearing aids, " +
-                            "switching stop to stop on their own. No scanning, no tapping.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.66f)
+                    text =
+                        "Your receiver automatically follows the correct " +
+                                "stop announcement and plays it through your " +
+                                "connected hearing device. No repeated searching or tapping.",
+                    style =
+                        MaterialTheme.typography.bodyLarge,
+                    color =
+                        Color.White.copy(
+                            alpha = 0.66f
+                        )
                 )
 
-                Spacer(Modifier.height(30.dp))
+                Spacer(
+                    Modifier.height(30.dp)
+                )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-                    HeroStat(value = fittedStops.toString(), label = "stops fitted")
-                    HeroStat(value = liveRoutes.toString(), label = "routes live")
+                Row(
+                    horizontalArrangement =
+                        Arrangement.spacedBy(40.dp)
+                ) {
+
+                    HeroStat(
+                        value =
+                            fittedStops.toString(),
+                        label =
+                            "stops fitted"
+                    )
+
+                    HeroStat(
+                        value =
+                            liveRoutes.toString(),
+                        label =
+                            "routes live"
+                    )
                 }
 
-                Spacer(Modifier.height(28.dp))
+                Spacer(
+                    Modifier.height(28.dp)
+                )
             }
 
-            Column(modifier = Modifier.padding(horizontal = 28.dp, vertical = 22.dp)) {
+            Column(
+                modifier = Modifier.padding(
+                    horizontal = 28.dp,
+                    vertical = 22.dp
+                )
+            ) {
+
                 Button(
-                    onClick = onPlanJourney,
+                    onClick =
+                        onPlanJourney,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SignalAmber,
-                        contentColor = OnSignalAmber
-                    )
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor =
+                                SignalAmber,
+                            contentColor =
+                                OnSignalAmber
+                        )
                 ) {
+
                     Text(
-                        text = "Plan a journey",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        text =
+                            "Plan a journey",
+                        style =
+                            MaterialTheme.typography.titleMedium,
+                        fontWeight =
+                            FontWeight.Bold
                     )
                 }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(
+                    Modifier.height(10.dp)
+                )
 
                 OutlinedButton(
-                    onClick = onHowItWorks,
+                    onClick =
+                        onHowItWorks,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
-                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.3f)),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = Color.White.copy(alpha = 0.85f)
-                    )
+                    border =
+                        BorderStroke(
+                            1.5.dp,
+                            Color.White.copy(
+                                alpha = 0.3f
+                            )
+                        ),
+                    colors =
+                        ButtonDefaults
+                            .outlinedButtonColors(
+                                contentColor =
+                                    Color.White.copy(
+                                        alpha = 0.85f
+                                    )
+                            )
                 ) {
-                    Text("How this works")
+
+                    Text(
+                        text = "How this works"
+                    )
                 }
             }
         }
@@ -159,61 +244,131 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HeroStat(value: String, label: String) {
+private fun HeroStat(
+    value: String,
+    label: String
+) {
+
     Column {
+
         Text(
             text = value,
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.ExtraBold,
-            color = Color.White
+            style =
+                MaterialTheme.typography.headlineLarge,
+            fontWeight =
+                FontWeight.ExtraBold,
+            color =
+                Color.White
         )
+
         Text(
             text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.55f)
+            style =
+                MaterialTheme.typography.bodySmall,
+            color =
+                Color.White.copy(
+                    alpha = 0.55f
+                )
         )
     }
 }
 
 @Composable
-private fun BroadcastMark(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val motionEnabled = remember {
-        Settings.Global.getFloat(
-            context.contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f
-        ) != 0f
-    }
+private fun BroadcastMark(
+    modifier: Modifier = Modifier
+) {
 
-    val transition = rememberInfiniteTransition(label = "broadcast")
-    val animatedPhase by transition.animateFloat(
+    val context =
+        LocalContext.current
+
+    val motionEnabled =
+        remember {
+
+            Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) != 0f
+        }
+
+    val transition =
+        rememberInfiniteTransition(
+            label = "broadcast"
+        )
+
+    val animatedPhase by
+    transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
+        animationSpec =
+            infiniteRepeatable(
+                animation =
+                    tween(
+                        3200,
+                        easing =
+                            LinearEasing
+                    ),
+                repeatMode =
+                    RepeatMode.Restart
+            ),
         label = "phase"
     )
 
-    val phase = if (motionEnabled) animatedPhase else 0.45f
+    val phase: Float
 
-    Canvas(modifier = modifier.clearAndSetSemantics { }) {
-        val maxRadius = size.minDimension / 2f
+    if (motionEnabled) {
+        phase = animatedPhase
+    } else {
+        phase = 0.45f
+    }
 
-        listOf(0f, 0.34f, 0.67f).forEach { offset ->
-            val p = (phase + offset) % 1f
-            val radius = lerp(maxRadius * 0.2f, maxRadius, p)
-            val alpha = (1f - p) * 0.6f
+    Canvas(
+        modifier =
+            modifier.clearAndSetSemantics { }
+    ) {
+
+        val maxRadius =
+            size.minDimension / 2f
+
+        listOf(
+            0f,
+            0.34f,
+            0.67f
+        ).forEach { offset ->
+
+            val p =
+                (phase + offset) % 1f
+
+            val radius =
+                lerp(
+                    maxRadius * 0.2f,
+                    maxRadius,
+                    p
+                )
+
+            val alpha =
+                (1f - p) * 0.6f
 
             drawCircle(
-                color = SignalAmber.copy(alpha = alpha),
-                radius = radius,
-                style = Stroke(width = 3.dp.toPx())
+                color =
+                    SignalAmber.copy(
+                        alpha = alpha
+                    ),
+                radius =
+                    radius,
+                style =
+                    Stroke(
+                        width =
+                            3.dp.toPx()
+                    )
             )
         }
 
-        drawCircle(color = SignalAmber, radius = maxRadius * 0.12f)
+        drawCircle(
+            color =
+                SignalAmber,
+            radius =
+                maxRadius * 0.12f
+        )
     }
 }

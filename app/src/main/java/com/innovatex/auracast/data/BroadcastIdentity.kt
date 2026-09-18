@@ -4,7 +4,8 @@ data class BroadcastIdentity(
     val routeID: Int,
     val stopIndex: Int,
     val direction: Int = DIRECTION_OUTBOUND,
-    val language: Int = DIRECTION_INBOUND,
+    val language: Int = LANGUAGE_ENGLISH
+
 ) {
     companion object {
         const val DIRECTION_OUTBOUND = 0

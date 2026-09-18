@@ -2,8 +2,14 @@ package com.innovatex.auracast.core
 
 import com.innovatex.auracast.bluetooth.DiscoveredBroadcast
 
+
 object MatchingEngine {
-    const val SEARCH_TIMEOUT = 10_000L // 10s timeout
+
+    const val SEARCH_TIMEOUT = 10_000L // 10 seconds
+
+    private const val CONNECT_TIMEOUT = 10_000L // 10 seconds
+
+
 
     fun decide(
         state: JourneyState,
@@ -11,64 +17,126 @@ object MatchingEngine {
         currentTime: Long
     ): MatchDecision {
 
-        // Case: route/journey is over -> do nothing
+
         if (state.isJourneyOver) {
             return MatchDecision.DoNothing
         }
 
-        // Case: target stop is non-existant -> do nothing
+
+        if (state.phase == JourneyPhase.CONNECTING) {
+
+            val connectingFor =
+                currentTime - state.phaseStartedAt
+
+            // FMA120 has taken too long to synchronise.
+            if (connectingFor >= CONNECT_TIMEOUT) {
+                return MatchDecision.Fault
+            }
+
+            // Still waiting for FMA120 synchronization.
+            return MatchDecision.DoNothing
+        }
+
+
         val targetStop = state.currentTargetStop
+
         if (targetStop == null) {
             return MatchDecision.DoNothing
         }
 
-        // Case: the stop has no Auracast transmitter -> do nothing
+
+
         if (!targetStop.hasAuracast) {
-            // First check if next covered stop has shown up
-            val nextStop = state.nextAuracastEnabledStop
-            if (nextStop != null && visible.any { StopMatcher.matches(it.metadata, nextStop) }) {
+
+            val nextStop =
+                state.nextAuracastEnabledStop
+
+            if (
+                nextStop != null &&
+                visible.any {
+                    StopMatcher.matches(
+                        it.metadata,
+                        nextStop
+                    )
+                }
+            ) {
                 return MatchDecision.Advance
             }
 
             return MatchDecision.DoNothing
         }
 
-        // Get device addr
-        val connectedAddress = state.deviceAddress
-        // Case: device is connected
+
+        val connectedAddress =
+            state.deviceAddress
+
+
         if (connectedAddress != null) {
-            // Get next valid stop
-            val nextStop = state.nextAuracastEnabledStop
-            // Case: next stop has appeared -> advance
+
+            // Find the next Auracast-enabled stop in the route.
+            val nextStop =
+                state.nextAuracastEnabledStop
+
+
+
             if (nextStop != null) {
-                val nextVisible = visible.any { StopMatcher.matches(it.metadata, nextStop) }
+
+                val nextVisible =
+                    visible.any {
+                        StopMatcher.matches(
+                            it.metadata,
+                            nextStop
+                        )
+                    }
+
                 if (nextVisible) {
                     return MatchDecision.Advance
                 }
             }
 
-            // Case: transmitter we're joined to is no longer in range -> dc
-            val stillVisible = visible.any { it.deviceAddress == connectedAddress }
+
+
+            val stillVisible =
+                visible.any {
+                    it.deviceAddress ==
+                            connectedAddress
+                }
+
             if (!stillVisible) {
                 return MatchDecision.Disconnect
             }
 
+
             return MatchDecision.DoNothing
         }
 
-        // Case: not connected & if expected transmitter is in range -> connect
-        val match = visible.firstOrNull { StopMatcher.matches(it.metadata, targetStop) }
+
+        val match =
+            visible.firstOrNull {
+                StopMatcher.matches(
+                    it.metadata,
+                    targetStop
+                )
+            }
+
+
         if (match != null) {
             return MatchDecision.Connect(match)
         }
 
-        // Case: timed out -> fault
-        val searchedFor = currentTime - state.phaseStartedAt
-        if (state.phase == JourneyPhase.SEARCHING && searchedFor >= SEARCH_TIMEOUT) {
+
+        val searchedFor =
+            currentTime - state.phaseStartedAt
+
+        if (
+            state.phase == JourneyPhase.SEARCHING &&
+            searchedFor >= SEARCH_TIMEOUT
+        ) {
             return MatchDecision.Fault
         }
 
-        // Case: still looking
+
+
         return MatchDecision.DoNothing
     }
 }
