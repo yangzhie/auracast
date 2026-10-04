@@ -11,6 +11,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -22,84 +23,125 @@ import com.innovatex.auracast.bluetooth.FmaReceiveState
 import com.innovatex.auracast.bluetooth.FmaReceiverBroadcast
 import com.innovatex.auracast.bluetooth.FmaUsbTransport
 
+
 class FmaDebugViewModel : ViewModel() {
+
+
+    // =========================================================
+    // UI STATE
+    // =========================================================
 
     var usbConnected by mutableStateOf(false)
         private set
 
+
     var usbPermissionGranted by mutableStateOf(false)
         private set
+
 
     var controlChannelOpen by mutableStateOf(false)
         private set
 
+
     var usbAudioDetected by mutableStateOf(false)
         private set
+
 
     var hearingOutputConnected by mutableStateOf(false)
         private set
 
+
     var recordAudioGranted by mutableStateOf(false)
         private set
+
 
     var audioTestRunning by mutableStateOf(false)
         private set
 
+
     var autoModeEnabled by mutableStateOf(false)
         private set
+
 
     var activeAutoSource by mutableStateOf<FmaReceiverBroadcast?>(
         null
     )
         private set
 
+
     var fmaSources by mutableStateOf<List<FmaReceiverBroadcast>>(
         emptyList()
     )
         private set
+
 
     var currentReceiveState by mutableStateOf<FmaReceiveState?>(
         null
     )
         private set
 
+
     var usbDevices by mutableStateOf<List<String>>(
         emptyList()
     )
         private set
 
+
     var statusMessage by mutableStateOf("")
         private set
 
-    private var applicationContext:
-            Context? = null
+
+    // =========================================================
+    // INTERNAL OBJECTS
+    // =========================================================
 
     private var controller:
             Fma120ReceiverController? = null
 
+
     private var audioRelay:
             UsbAudioRelay? = null
 
+
+    private var applicationContext:
+            Context? = null
+
+
+    /*
+     * Source for which receive(source) has been sent,
+     * but STREAMING has not yet been confirmed.
+     */
     private var pendingAutoSource:
             FmaReceiverBroadcast? = null
 
-    private var autoRecoveryInProgress =
-        false
 
-    private var autoRestartRunnable:
+    /*
+     * Prevent multiple reconnect timers.
+     */
+    private var autoRescanRunnable:
             Runnable? = null
 
+
+    /*
+     * Automatic audio startup retry.
+     */
     private var audioRetryRunnable:
             Runnable? = null
 
+
     private var audioRetryCount =
         0
+
 
     private val mainHandler =
         Handler(
             Looper.getMainLooper()
         )
 
+
+    // =========================================================
+    // REFRESH DEVICE STATUS
+    // =========================================================
 
     fun refresh(
         context: Context
@@ -108,23 +150,32 @@ class FmaDebugViewModel : ViewModel() {
         val appContext =
             context.applicationContext
 
+
         applicationContext =
             appContext
+
+
+        // -----------------------------------------------------
+        // USB / FMA120
+        // -----------------------------------------------------
 
         val usbManager =
             appContext.getSystemService(
                 UsbManager::class.java
             )
 
+
         val fmaDevice =
             FmaUsbTransport.findDevice(
                 appContext
             )
 
+
         if (fmaDevice != null) {
 
             usbConnected =
                 true
+
 
             if (usbManager != null) {
 
@@ -144,13 +195,19 @@ class FmaDebugViewModel : ViewModel() {
             usbConnected =
                 false
 
+
             usbPermissionGranted =
                 false
+
 
             controlChannelOpen =
                 false
         }
 
+
+        // -----------------------------------------------------
+        // RECORD_AUDIO permission
+        // -----------------------------------------------------
 
         recordAudioGranted =
             ContextCompat.checkSelfPermission(
@@ -159,19 +216,30 @@ class FmaDebugViewModel : ViewModel() {
             ) == PackageManager.PERMISSION_GRANTED
 
 
+        // -----------------------------------------------------
+        // Android audio devices
+        // -----------------------------------------------------
+
         val audioManager =
             appContext.getSystemService(
                 AudioManager::class.java
             )
 
+
         usbAudioDetected =
             false
+
 
         hearingOutputConnected =
             false
 
 
         if (audioManager != null) {
+
+
+            // -------------------------------------------------
+            // FMA120 USB audio input
+            // -------------------------------------------------
 
             val inputs =
                 audioManager.getDevices(
@@ -180,6 +248,7 @@ class FmaDebugViewModel : ViewModel() {
 
 
             for (device in inputs) {
+
 
                 if (
                     device.type ==
@@ -202,6 +271,10 @@ class FmaDebugViewModel : ViewModel() {
             }
 
 
+            // -------------------------------------------------
+            // Hearing / Bluetooth output
+            // -------------------------------------------------
+
             val outputs =
                 audioManager.getDevices(
                     AudioManager.GET_DEVICES_OUTPUTS
@@ -209,6 +282,7 @@ class FmaDebugViewModel : ViewModel() {
 
 
             for (device in outputs) {
+
 
                 if (
                     device.type ==
@@ -268,15 +342,22 @@ class FmaDebugViewModel : ViewModel() {
     }
 
 
+    // =========================================================
+    // USB DEVICE LIST
+    // =========================================================
+
     fun listUsbDevices(
         context: Context
     ) {
 
-        val usbManager =
+        val appContext =
             context.applicationContext
-                .getSystemService(
-                    UsbManager::class.java
-                )
+
+
+        val usbManager =
+            appContext.getSystemService(
+                UsbManager::class.java
+            )
 
 
         if (usbManager == null) {
@@ -284,8 +365,10 @@ class FmaDebugViewModel : ViewModel() {
             usbDevices =
                 emptyList()
 
+
             statusMessage =
                 "USB service is unavailable."
+
 
             return
         }
@@ -294,23 +377,29 @@ class FmaDebugViewModel : ViewModel() {
         val devices =
             usbManager.deviceList.values
 
+
         val result =
             mutableListOf<String>()
 
 
         for (device in devices) {
 
+
+            val vendorId =
+                device.vendorId
+                    .toString(16)
+                    .uppercase()
+
+
+            val productId =
+                device.productId
+                    .toString(16)
+                    .uppercase()
+
+
             val description =
-                "VID=0x${
-                    device.vendorId
-                        .toString(16)
-                        .uppercase()
-                } " +
-                        "PID=0x${
-                            device.productId
-                                .toString(16)
-                                .uppercase()
-                        } " +
+                "VID=0x$vendorId " +
+                        "PID=0x$productId " +
                         "Interfaces=${device.interfaceCount}"
 
 
@@ -325,7 +414,7 @@ class FmaDebugViewModel : ViewModel() {
 
 
         FmaUsbTransport.logUsbDevices(
-            context
+            appContext
         )
 
 
@@ -342,12 +431,17 @@ class FmaDebugViewModel : ViewModel() {
     }
 
 
+    // =========================================================
+    // USB PERMISSION
+    // =========================================================
+
     fun requestUsbPermission(
         context: Context
     ) {
 
         val appContext =
             context.applicationContext
+
 
         applicationContext =
             appContext
@@ -364,6 +458,7 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "USB service is unavailable."
 
+
             return
         }
 
@@ -379,10 +474,15 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "FMA120 receiver was not detected."
 
+
             return
         }
 
 
+        /*
+         * Permission may already have been granted
+         * since the previous refresh.
+         */
         if (
             usbManager.hasPermission(
                 fmaDevice
@@ -396,6 +496,16 @@ class FmaDebugViewModel : ViewModel() {
             openFma120(
                 appContext
             )
+
+
+            /*
+             * Continue automatic startup.
+             */
+            if (autoModeEnabled) {
+
+                startAutomaticScan()
+            }
+
 
             return
         }
@@ -430,31 +540,73 @@ class FmaDebugViewModel : ViewModel() {
 
         statusMessage =
             "Waiting for USB permission."
+
+
+        Log.i(
+            TAG,
+            "AUTO: waiting for USB permission"
+        )
     }
 
+
+    // =========================================================
+    // USB PERMISSION RESULT
+    // =========================================================
 
     fun onUsbPermissionResult(
         context: Context
     ) {
 
+        val appContext =
+            context.applicationContext
+
+
+        applicationContext =
+            appContext
+
+
         refresh(
-            context
+            appContext
         )
 
 
-        if (usbPermissionGranted) {
+        Log.i(
+            TAG,
+            "USB permission result: granted=$usbPermissionGranted"
+        )
 
-            openFma120(
-                context
-            )
 
-        } else {
+        if (!usbPermissionGranted) {
 
             statusMessage =
                 "USB permission was not granted."
+
+
+            return
+        }
+
+
+        /*
+         * Open FMA120 only.
+         */
+        openFma120(
+            appContext
+        )
+
+
+        /*
+         * Continue automatic mode after USB permission.
+         */
+        if (autoModeEnabled) {
+
+            startAutomaticScan()
         }
     }
 
+
+    // =========================================================
+    // OPEN FMA120
+    // =========================================================
 
     fun openFma120(
         context: Context
@@ -462,6 +614,7 @@ class FmaDebugViewModel : ViewModel() {
 
         val appContext =
             context.applicationContext
+
 
         applicationContext =
             appContext
@@ -477,6 +630,7 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "Connect the FMA120 receiver first."
 
+
             return
         }
 
@@ -486,6 +640,26 @@ class FmaDebugViewModel : ViewModel() {
             requestUsbPermission(
                 appContext
             )
+
+
+            return
+        }
+
+
+        /*
+         * If the controller is already open,
+         * do not close/reopen it unnecessarily.
+         */
+        if (
+            controller != null &&
+            controlChannelOpen
+        ) {
+
+            Log.i(
+                TAG,
+                "FMA120 controller already open"
+            )
+
 
             return
         }
@@ -497,11 +671,31 @@ class FmaDebugViewModel : ViewModel() {
 
         if (oldController != null) {
 
-            oldController.close()
+            try {
+
+                oldController.close()
+
+            } catch (
+                exception: Exception
+            ) {
+
+                Log.w(
+                    TAG,
+                    "Error closing previous FMA controller",
+                    exception
+                )
+            }
+
 
             controller =
                 null
         }
+
+
+        Log.i(
+            TAG,
+            "Opening FMA120 control channel"
+        )
 
 
         val newController =
@@ -534,9 +728,17 @@ class FmaDebugViewModel : ViewModel() {
                 onError = {
                         message ->
 
-                    postStatus(
-                        message
-                    )
+                    mainHandler.post {
+
+                        Log.e(
+                            TAG,
+                            "FMA120 error: $message"
+                        )
+
+
+                        statusMessage =
+                            message
+                    }
                 }
             )
 
@@ -550,11 +752,20 @@ class FmaDebugViewModel : ViewModel() {
             controlChannelOpen =
                 false
 
+
             controller =
                 null
 
+
             statusMessage =
                 "Unable to open FMA120 control channel."
+
+
+            Log.e(
+                TAG,
+                "Unable to open FMA120 control channel"
+            )
+
 
             return
         }
@@ -563,38 +774,37 @@ class FmaDebugViewModel : ViewModel() {
         controller =
             newController
 
+
         controlChannelOpen =
             true
 
 
-        if (autoModeEnabled) {
-
-            fmaSources =
-                emptyList()
-
-            pendingAutoSource =
-                null
-
-            activeAutoSource =
-                null
-
-            currentReceiveState =
-                null
+        statusMessage =
+            "FMA120 control channel open."
 
 
-            newController.startScan()
+        Log.i(
+            TAG,
+            "FMA120 control channel opened"
+        )
 
 
-            statusMessage =
-                "Automatic mode active. Scanning for Auracast transmitters."
-
-        } else {
-
-            statusMessage =
-                "FMA120 control channel open."
-        }
+        /*
+         * IMPORTANT:
+         *
+         * Do NOT call startScan() here.
+         *
+         * startAutoMode(), permission handling,
+         * or manual scan() will start scanning.
+         *
+         * This prevents duplicate BC:BI commands.
+         */
     }
 
+
+    // =========================================================
+    // START AUTOMATIC MODE
+    // =========================================================
 
     fun startAutoMode(
         context: Context
@@ -603,29 +813,38 @@ class FmaDebugViewModel : ViewModel() {
         val appContext =
             context.applicationContext
 
+
         applicationContext =
             appContext
+
+
+        Log.i(
+            TAG,
+            "AUTO: startAutoMode called"
+        )
 
 
         autoModeEnabled =
             true
 
+
         activeAutoSource =
             null
+
 
         pendingAutoSource =
             null
 
+
         currentReceiveState =
             null
 
-        autoRecoveryInProgress =
-            false
 
+        cancelAutoRescan()
 
-        cancelAutoRestart()
 
         cancelAudioRetry()
+
 
         stopAudioRelayInternal()
 
@@ -635,20 +854,101 @@ class FmaDebugViewModel : ViewModel() {
         )
 
 
+        Log.i(
+            TAG,
+            "AUTO: usbConnected=$usbConnected " +
+                    "usbPermission=$usbPermissionGranted"
+        )
+
+
+        // -----------------------------------------------------
+        // FMA120 missing
+        // -----------------------------------------------------
+
         if (!usbConnected) {
 
             statusMessage =
                 "Connect the FMA120 receiver."
 
+
+            Log.i(
+                TAG,
+                "AUTO: FMA120 not connected"
+            )
+
+
             return
         }
 
 
+        // -----------------------------------------------------
+        // USB permission missing
+        // -----------------------------------------------------
+
         if (!usbPermissionGranted) {
+
+            statusMessage =
+                "Requesting FMA120 USB permission."
+
 
             requestUsbPermission(
                 appContext
             )
+
+
+            return
+        }
+
+
+        // -----------------------------------------------------
+        // Open FMA120 if necessary
+        // -----------------------------------------------------
+
+        if (
+            controller == null ||
+            !controlChannelOpen
+        ) {
+
+            openFma120(
+                appContext
+            )
+        }
+
+
+        if (
+            controller == null ||
+            !controlChannelOpen
+        ) {
+
+            statusMessage =
+                "FMA120 could not be opened."
+
+
+            Log.e(
+                TAG,
+                "AUTO: controller unavailable after open"
+            )
+
+
+            return
+        }
+
+
+        // -----------------------------------------------------
+        // Start exactly ONE automatic scan
+        // -----------------------------------------------------
+
+        startAutomaticScan()
+    }
+
+
+    // =========================================================
+    // START AUTOMATIC SCAN
+    // =========================================================
+
+    private fun startAutomaticScan() {
+
+        if (!autoModeEnabled) {
 
             return
         }
@@ -660,40 +960,88 @@ class FmaDebugViewModel : ViewModel() {
 
         if (currentController == null) {
 
-            openFma120(
-                appContext
+            statusMessage =
+                "FMA120 controller is unavailable."
+
+
+            Log.e(
+                TAG,
+                "AUTO: cannot scan; controller is null"
             )
+
 
             return
         }
+
+
+        /*
+         * We are looking for a new source.
+         */
+        activeAutoSource =
+            null
+
+
+        pendingAutoSource =
+            null
+
+
+        currentReceiveState =
+            null
 
 
         fmaSources =
             emptyList()
 
 
+        Log.i(
+            TAG,
+            "AUTO: sending FMA scan command"
+        )
+
+
         currentController.startScan()
 
 
         statusMessage =
-            "Automatic mode active. Scanning for Auracast transmitters."
+            "Automatically searching for Auracast broadcasts."
     }
 
 
+    // =========================================================
+    // STOP AUTOMATIC MODE
+    // =========================================================
+
     fun stopAutoMode() {
+
+        Log.i(
+            TAG,
+            "AUTO: stopAutoMode called"
+        )
+
 
         autoModeEnabled =
             false
 
-        autoRecoveryInProgress =
-            false
 
+        cancelAutoRescan()
 
-        cancelAutoRestart()
 
         cancelAudioRetry()
 
+
         stopAudioRelayInternal()
+
+
+        activeAutoSource =
+            null
+
+
+        pendingAutoSource =
+            null
+
+
+        currentReceiveState =
+            null
 
 
         val currentController =
@@ -702,26 +1050,48 @@ class FmaDebugViewModel : ViewModel() {
 
         if (currentController != null) {
 
-            currentController.stopReceiving()
 
-            currentController.stopScan()
+            try {
+
+                currentController.stopReceiving()
+
+            } catch (
+                exception: Exception
+            ) {
+
+                Log.w(
+                    TAG,
+                    "Error stopping FMA receive",
+                    exception
+                )
+            }
+
+
+            try {
+
+                currentController.stopScan()
+
+            } catch (
+                exception: Exception
+            ) {
+
+                Log.w(
+                    TAG,
+                    "Error stopping FMA scan",
+                    exception
+                )
+            }
         }
-
-
-        activeAutoSource =
-            null
-
-        pendingAutoSource =
-            null
-
-        currentReceiveState =
-            null
 
 
         statusMessage =
             "Automatic mode stopped."
     }
 
+
+    // =========================================================
+    // MANUAL SCAN
+    // =========================================================
 
     fun scan() {
 
@@ -733,6 +1103,7 @@ class FmaDebugViewModel : ViewModel() {
 
             statusMessage =
                 "Open the FMA120 first."
+
 
             return
         }
@@ -767,6 +1138,7 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "FMA120 is not open."
 
+
             return
         }
 
@@ -778,6 +1150,10 @@ class FmaDebugViewModel : ViewModel() {
             "FMA120 scan stopped."
     }
 
+
+    // =========================================================
+    // MANUAL RECEIVE
+    // =========================================================
 
     fun receive(
         source: FmaReceiverBroadcast
@@ -792,12 +1168,20 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "Open the FMA120 first."
 
+
             return
         }
 
 
         currentReceiveState =
             null
+
+
+        Log.i(
+            TAG,
+            "MANUAL: receive ${source.broadcastName} " +
+                    "IDs=${source.broadcastIDs}"
+        )
 
 
         currentController.receive(
@@ -810,6 +1194,10 @@ class FmaDebugViewModel : ViewModel() {
     }
 
 
+    // =========================================================
+    // STOP RECEIVING
+    // =========================================================
+
     fun stopReceiving() {
 
         val currentController =
@@ -821,6 +1209,7 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "FMA120 is not open."
 
+
             return
         }
 
@@ -831,11 +1220,16 @@ class FmaDebugViewModel : ViewModel() {
         currentReceiveState =
             null
 
+
         activeAutoSource =
             null
 
+
         pendingAutoSource =
             null
+
+
+        cancelAudioRetry()
 
 
         stopAudioRelayInternal()
@@ -846,48 +1240,38 @@ class FmaDebugViewModel : ViewModel() {
     }
 
 
-    fun startAudioTest(
-        context: Context
-    ) {
-
-        applicationContext =
-            context.applicationContext
-
-
-        startAudioRelay(
-            context =
-                context,
-
-            automatic =
-                false
-        )
-    }
-
-
-    fun stopAudioTest() {
-
-        cancelAudioRetry()
-
-        stopAudioRelayInternal()
-
-
-        statusMessage =
-            "Audio test stopped."
-    }
-
+    // =========================================================
+    // FMA120 FOUND A BROADCAST
+    // =========================================================
 
     private fun handleBroadcastFound(
         source: FmaReceiverBroadcast
     ) {
 
+        Log.i(
+            TAG,
+            "AUTO: broadcast found " +
+                    "name=${source.broadcastName}, " +
+                    "rssi=${source.rssi}, " +
+                    "address=${source.address}, " +
+                    "ids=${source.broadcastIDs}"
+        )
+
+
+        // -----------------------------------------------------
+        // Update the list shown by the UI
+        // -----------------------------------------------------
+
         val updated =
             fmaSources.toMutableList()
+
 
         var existingIndex =
             -1
 
 
         for (index in updated.indices) {
+
 
             val existing =
                 updated[index]
@@ -915,15 +1299,13 @@ class FmaDebugViewModel : ViewModel() {
                 existingIndex =
                     index
 
+
                 break
             }
         }
 
 
-        if (
-            existingIndex >=
-            0
-        ) {
+        if (existingIndex >= 0) {
 
             updated[existingIndex] =
                 source
@@ -937,7 +1319,6 @@ class FmaDebugViewModel : ViewModel() {
 
 
         updated.sortByDescending {
-
             it.rssi
         }
 
@@ -946,29 +1327,48 @@ class FmaDebugViewModel : ViewModel() {
             updated
 
 
+        // =====================================================
+        // AUTOMATIC CONNECTION
+        // =====================================================
+
         if (!autoModeEnabled) {
 
-            return
-        }
+            Log.i(
+                TAG,
+                "AUTO: disabled; source only added to list"
+            )
 
-
-        if (autoRecoveryInProgress) {
-
-            return
-        }
-
-
-        if (
-            activeAutoSource != null
-        ) {
 
             return
         }
 
 
-        if (
-            pendingAutoSource != null
-        ) {
+        /*
+         * Already streaming from a source.
+         */
+        if (activeAutoSource != null) {
+
+            Log.i(
+                TAG,
+                "AUTO: already connected; ignoring new source"
+            )
+
+
+            return
+        }
+
+
+        /*
+         * receive(source) has already been sent.
+         * Wait for the BA state response.
+         */
+        if (pendingAutoSource != null) {
+
+            Log.i(
+                TAG,
+                "AUTO: connection already pending"
+            )
+
 
             return
         }
@@ -983,10 +1383,20 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "FMA120 controller is unavailable."
 
+
+            Log.e(
+                TAG,
+                "AUTO: cannot receive; controller null"
+            )
+
+
             return
         }
 
 
+        /*
+         * Remember the exact FMA source.
+         */
         pendingAutoSource =
             source
 
@@ -999,11 +1409,36 @@ class FmaDebugViewModel : ViewModel() {
             "Automatically connecting to ${source.broadcastName}."
 
 
+        Log.i(
+            TAG,
+            "AUTO: sending receive command " +
+                    "name=${source.broadcastName}, " +
+                    "ids=${source.broadcastIDs}"
+        )
+
+
+        /*
+         * IMPORTANT:
+         *
+         * Do NOT stopScan() here.
+         *
+         * Your working manual flow performs:
+         *
+         * BC:BI
+         * find source
+         * BC:BA=<broadcastIDs>
+         *
+         * without sending BC:BI=00 first.
+         */
         currentController.receive(
             source
         )
     }
 
+
+    // =========================================================
+    // FMA120 RECEIVE STATE
+    // =========================================================
 
     private fun handleReceiveState(
         receiveState: FmaReceiveState
@@ -1013,6 +1448,22 @@ class FmaDebugViewModel : ViewModel() {
             receiveState
 
 
+        Log.i(
+            TAG,
+            "AUTO: receive state " +
+                    "sourceId=${receiveState.sourceId}, " +
+                    "ids=${receiveState.broadcastIDs}, " +
+                    "sync=${receiveState.syncState}, " +
+                    "encryption=${receiveState.encryptionState}, " +
+                    "bis=${receiveState.bisState}, " +
+                    "streaming=${receiveState.isStreaming}"
+        )
+
+
+        // -----------------------------------------------------
+        // Broadcast Code requested
+        // -----------------------------------------------------
+
         if (
             receiveState.needsBroadcastCode
         ) {
@@ -1021,33 +1472,76 @@ class FmaDebugViewModel : ViewModel() {
                 controller
 
 
-            if (currentController != null) {
-
-                currentController.provideBroadcastCode(
-                    sourceId =
-                        receiveState.sourceId,
-
-                    code =
-                        BROADCAST_CODE
-                )
-
+            if (currentController == null) {
 
                 statusMessage =
-                    "Broadcast Code sent."
+                    "FMA120 controller is unavailable."
+
+
+                return
             }
+
+
+            Log.i(
+                TAG,
+                "AUTO: FMA requested Broadcast Code"
+            )
+
+
+            currentController.provideBroadcastCode(
+                sourceId =
+                    receiveState.sourceId,
+
+                code =
+                    BROADCAST_CODE
+            )
+
+
+            statusMessage =
+                "Broadcast Code sent."
 
 
             return
         }
 
 
+        // -----------------------------------------------------
+        // Synchronization failed
+        // -----------------------------------------------------
+
         if (
             receiveState.syncFailed
         ) {
 
+            Log.e(
+                TAG,
+                "AUTO: FMA synchronization failed"
+            )
+
+
             if (autoModeEnabled) {
 
-                recoverAutomaticConnection()
+
+                activeAutoSource =
+                    null
+
+
+                pendingAutoSource =
+                    null
+
+
+                cancelAudioRetry()
+
+
+                stopAudioRelayInternal()
+
+
+                statusMessage =
+                    "Auracast connection failed. Searching again."
+
+
+                scheduleAutoRescan()
+
 
                 return
             }
@@ -1056,20 +1550,31 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "FMA120 synchronization failed."
 
+
             return
         }
 
+
+        // -----------------------------------------------------
+        // STREAMING
+        // -----------------------------------------------------
 
         if (
             receiveState.isStreaming
         ) {
 
-            autoRecoveryInProgress =
-                false
+            Log.i(
+                TAG,
+                "AUTO: FMA120 STREAMING"
+            )
 
 
             if (autoModeEnabled) {
 
+
+                /*
+                 * Connection succeeded.
+                 */
                 val pending =
                     pendingAutoSource
 
@@ -1083,9 +1588,6 @@ class FmaDebugViewModel : ViewModel() {
 
                 pendingAutoSource =
                     null
-
-
-                startAutomaticAudio()
 
 
                 val active =
@@ -1104,12 +1606,30 @@ class FmaDebugViewModel : ViewModel() {
                 }
 
 
+                /*
+                 * Start:
+                 *
+                 * FMA120 USB audio
+                 *      ↓
+                 * AudioRecord
+                 *      ↓
+                 * AudioTrack
+                 *      ↓
+                 * hearing/Bluetooth output
+                 */
+                if (!audioTestRunning) {
+
+                    startAutomaticAudio()
+                }
+
+
                 return
             }
 
 
             statusMessage =
                 "FMA120 is receiving the Auracast broadcast."
+
 
             return
         }
@@ -1120,7 +1640,14 @@ class FmaDebugViewModel : ViewModel() {
     }
 
 
-    private fun recoverAutomaticConnection() {
+    // =========================================================
+    // AUTOMATIC RECONNECT
+    // =========================================================
+
+    private fun scheduleAutoRescan() {
+
+        cancelAutoRescan()
+
 
         if (!autoModeEnabled) {
 
@@ -1128,94 +1655,79 @@ class FmaDebugViewModel : ViewModel() {
         }
 
 
-        if (autoRecoveryInProgress) {
-
-            return
-        }
-
-
-        autoRecoveryInProgress =
-            true
-
-
-        cancelAudioRetry()
-
-        stopAudioRelayInternal()
-
-
-        activeAutoSource =
-            null
-
-        pendingAutoSource =
-            null
-
-        currentReceiveState =
-            null
-
-
-        val currentController =
-            controller
-
-
-        if (currentController == null) {
-
-            autoRecoveryInProgress =
-                false
-
-            statusMessage =
-                "FMA120 controller is unavailable."
-
-            return
-        }
-
-
-        currentController.stopReceiving()
-
-        currentController.stopScan()
-
-
-        statusMessage =
-            "Connection failed. Searching again."
-
-
         val runnable =
             Runnable {
 
-                autoRestartRunnable =
+
+                autoRescanRunnable =
                     null
 
 
                 if (!autoModeEnabled) {
 
-                    autoRecoveryInProgress =
-                        false
-
                     return@Runnable
                 }
 
 
-                val activeController =
+                val currentController =
                     controller
 
 
-                if (activeController == null) {
+                if (currentController == null) {
 
-                    autoRecoveryInProgress =
-                        false
+                    statusMessage =
+                        "FMA120 controller is unavailable."
+
 
                     return@Runnable
                 }
+
+
+                Log.i(
+                    TAG,
+                    "AUTO: stopping failed receive session"
+                )
+
+
+                try {
+
+                    currentController.stopReceiving()
+
+                } catch (
+                    exception: Exception
+                ) {
+
+                    Log.w(
+                        TAG,
+                        "AUTO: stopReceiving failed",
+                        exception
+                    )
+                }
+
+
+                activeAutoSource =
+                    null
+
+
+                pendingAutoSource =
+                    null
+
+
+                currentReceiveState =
+                    null
 
 
                 fmaSources =
                     emptyList()
 
 
-                autoRecoveryInProgress =
-                    false
+                Log.i(
+                    TAG,
+                    "AUTO: restarting scan after failure"
+                )
 
 
-                activeController.startScan()
+                currentController.startScan()
 
 
                 statusMessage =
@@ -1223,7 +1735,7 @@ class FmaDebugViewModel : ViewModel() {
             }
 
 
-        autoRestartRunnable =
+        autoRescanRunnable =
             runnable
 
 
@@ -1234,6 +1746,29 @@ class FmaDebugViewModel : ViewModel() {
     }
 
 
+    private fun cancelAutoRescan() {
+
+        val runnable =
+            autoRescanRunnable
+
+
+        if (runnable != null) {
+
+            mainHandler.removeCallbacks(
+                runnable
+            )
+        }
+
+
+        autoRescanRunnable =
+            null
+    }
+
+
+    // =========================================================
+    // AUTOMATIC AUDIO
+    // =========================================================
+
     private fun startAutomaticAudio() {
 
         cancelAudioRetry()
@@ -1241,6 +1776,12 @@ class FmaDebugViewModel : ViewModel() {
 
         audioRetryCount =
             0
+
+
+        Log.i(
+            TAG,
+            "AUTO: starting automatic audio relay"
+        )
 
 
         attemptAutomaticAudio()
@@ -1255,6 +1796,16 @@ class FmaDebugViewModel : ViewModel() {
         }
 
 
+        /*
+         * Do not create another relay
+         * if one is already running.
+         */
+        if (audioTestRunning) {
+
+            return
+        }
+
+
         val context =
             applicationContext
 
@@ -1264,33 +1815,56 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "Application context is unavailable."
 
+
             return
         }
 
 
-        val started =
-            startAudioRelay(
-                context =
-                    context,
+        Log.i(
+            TAG,
+            "AUTO: audio relay attempt " +
+                    "${audioRetryCount + 1}"
+        )
 
-                automatic =
-                    true
+
+        startAudioTest(
+            context
+        )
+
+
+        /*
+         * Successful.
+         */
+        if (audioTestRunning) {
+
+            Log.i(
+                TAG,
+                "AUTO: audio relay started"
             )
 
 
-        if (started) {
-
             return
         }
 
 
+        /*
+         * Android may need a short period before
+         * the USB audio endpoint becomes available.
+         */
         if (
             audioRetryCount >=
             MAX_AUDIO_RETRIES
         ) {
 
+            Log.e(
+                TAG,
+                "AUTO: audio relay failed after retries"
+            )
+
+
             statusMessage =
                 "Auracast is connected, but the audio relay could not start."
+
 
             return
         }
@@ -1302,6 +1876,7 @@ class FmaDebugViewModel : ViewModel() {
 
         val runnable =
             Runnable {
+
 
                 audioRetryRunnable =
                     null
@@ -1322,13 +1897,43 @@ class FmaDebugViewModel : ViewModel() {
     }
 
 
-    private fun startAudioRelay(
-        context: Context,
-        automatic: Boolean
-    ): Boolean {
+    private fun cancelAudioRetry() {
+
+        val runnable =
+            audioRetryRunnable
+
+
+        if (runnable != null) {
+
+            mainHandler.removeCallbacks(
+                runnable
+            )
+        }
+
+
+        audioRetryRunnable =
+            null
+
+
+        audioRetryCount =
+            0
+    }
+
+
+    // =========================================================
+    // AUDIO RELAY
+    // =========================================================
+
+    fun startAudioTest(
+        context: Context
+    ) {
 
         val appContext =
             context.applicationContext
+
+
+        applicationContext =
+            appContext
 
 
         refresh(
@@ -1336,12 +1941,23 @@ class FmaDebugViewModel : ViewModel() {
         )
 
 
+        // -----------------------------------------------------
+        // RECORD_AUDIO permission
+        // -----------------------------------------------------
+
         if (!recordAudioGranted) {
 
             statusMessage =
                 "RECORD_AUDIO permission is required."
 
-            return false
+
+            Log.e(
+                TAG,
+                "Audio: RECORD_AUDIO permission missing"
+            )
+
+
+            return
         }
 
 
@@ -1356,38 +1972,181 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "Audio service is unavailable."
 
-            return false
+
+            return
         }
 
 
-        val usbInput =
-            findUsbAudioInput(
-                audioManager
+        // =====================================================
+        // FIND FMA120 USB AUDIO INPUT
+        // =====================================================
+
+        var usbInput:
+                AudioDeviceInfo? = null
+
+
+        val inputs =
+            audioManager.getDevices(
+                AudioManager.GET_DEVICES_INPUTS
             )
+
+
+        for (device in inputs) {
+
+
+            if (
+                device.type ==
+                AudioDeviceInfo.TYPE_USB_DEVICE
+            ) {
+
+                usbInput =
+                    device
+
+
+                break
+            }
+
+
+            if (
+                device.type ==
+                AudioDeviceInfo.TYPE_USB_HEADSET
+            ) {
+
+                usbInput =
+                    device
+
+
+                break
+            }
+        }
 
 
         if (usbInput == null) {
 
-            if (automatic) {
-
-                statusMessage =
-                    "Auracast connected. Waiting for FMA120 USB audio."
-
-            } else {
-
-                statusMessage =
-                    "FMA120 USB audio input was not found."
-            }
+            statusMessage =
+                "FMA120 USB audio input was not found."
 
 
-            return false
+            Log.i(
+                TAG,
+                "Audio: FMA120 USB input not found yet"
+            )
+
+
+            return
         }
 
 
-        val hearingOutput =
-            findHearingOutput(
-                audioManager
+        Log.i(
+            TAG,
+            "Audio: USB input " +
+                    "id=${usbInput.id}, " +
+                    "type=${usbInput.type}, " +
+                    "name=${usbInput.productName}"
+        )
+
+
+        // =====================================================
+        // FIND HEARING / BLUETOOTH OUTPUT
+        // =====================================================
+
+        var hearingOutput:
+                AudioDeviceInfo? = null
+
+
+        val outputs =
+            audioManager.getDevices(
+                AudioManager.GET_DEVICES_OUTPUTS
             )
+
+
+        /*
+         * Prefer real hearing-aid outputs.
+         */
+        for (device in outputs) {
+
+
+            if (
+                device.type ==
+                AudioDeviceInfo.TYPE_HEARING_AID
+            ) {
+
+                hearingOutput =
+                    device
+
+
+                break
+            }
+
+
+            if (
+                Build.VERSION.SDK_INT >= 37
+            ) {
+
+                if (
+                    device.type ==
+                    AudioDeviceInfo.TYPE_BLE_HEARING_AID
+                ) {
+
+                    hearingOutput =
+                        device
+
+
+                    break
+                }
+            }
+        }
+
+
+        /*
+         * Fall back to Bluetooth headphones /
+         * earbuds / BLE speakers.
+         */
+        if (hearingOutput == null) {
+
+
+            for (device in outputs) {
+
+
+                if (
+                    device.type ==
+                    AudioDeviceInfo.TYPE_BLE_HEADSET
+                ) {
+
+                    hearingOutput =
+                        device
+
+
+                    break
+                }
+
+
+                if (
+                    device.type ==
+                    AudioDeviceInfo.TYPE_BLE_SPEAKER
+                ) {
+
+                    hearingOutput =
+                        device
+
+
+                    break
+                }
+
+
+                if (
+                    device.type ==
+                    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                ) {
+
+                    hearingOutput =
+                        device
+
+
+                    break
+                }
+            }
+        }
 
 
         if (hearingOutput == null) {
@@ -1395,12 +2154,36 @@ class FmaDebugViewModel : ViewModel() {
             statusMessage =
                 "A hearing device or Bluetooth audio output was not found."
 
-            return false
+
+            Log.i(
+                TAG,
+                "Audio: Bluetooth/hearing output not found yet"
+            )
+
+
+            return
         }
 
 
+        Log.i(
+            TAG,
+            "Audio: output " +
+                    "id=${hearingOutput.id}, " +
+                    "type=${hearingOutput.type}, " +
+                    "name=${hearingOutput.productName}"
+        )
+
+
+        // =====================================================
+        // STOP OLD RELAY
+        // =====================================================
+
         stopAudioRelayInternal()
 
+
+        // =====================================================
+        // CREATE NEW RELAY
+        // =====================================================
 
         val newRelay =
             UsbAudioRelay(
@@ -1412,8 +2195,16 @@ class FmaDebugViewModel : ViewModel() {
 
                     mainHandler.post {
 
+
+                        Log.e(
+                            TAG,
+                            "Audio relay error: $message"
+                        )
+
+
                         audioTestRunning =
                             false
+
 
                         statusMessage =
                             message
@@ -1441,14 +2232,17 @@ class FmaDebugViewModel : ViewModel() {
                 false
 
 
-            if (!automatic) {
-
-                statusMessage =
-                    "Audio test could not be started."
-            }
+            statusMessage =
+                "Audio relay could not be started."
 
 
-            return false
+            Log.e(
+                TAG,
+                "Audio: UsbAudioRelay.start() returned false"
+            )
+
+
+            return
         }
 
 
@@ -1460,119 +2254,55 @@ class FmaDebugViewModel : ViewModel() {
             true
 
 
-        if (!automatic) {
+        // -----------------------------------------------------
+        // Status
+        // -----------------------------------------------------
+
+        if (autoModeEnabled) {
+
+            val active =
+                activeAutoSource
+
+
+            if (active != null) {
+
+                statusMessage =
+                    "Playing ${active.broadcastName} automatically."
+
+            } else {
+
+                statusMessage =
+                    "Automatic Auracast audio relay started."
+            }
+
+        } else {
 
             statusMessage =
                 "FMA120 USB audio relay started."
         }
 
 
-        return true
+        Log.i(
+            TAG,
+            "Audio: relay successfully started"
+        )
     }
 
 
-    private fun findUsbAudioInput(
-        audioManager: AudioManager
-    ): AudioDeviceInfo? {
+    // =========================================================
+    // STOP AUDIO
+    // =========================================================
 
-        val inputs =
-            audioManager.getDevices(
-                AudioManager.GET_DEVICES_INPUTS
-            )
+    fun stopAudioTest() {
 
-
-        for (device in inputs) {
-
-            if (
-                device.type ==
-                AudioDeviceInfo.TYPE_USB_DEVICE
-            ) {
-
-                return device
-            }
+        cancelAudioRetry()
 
 
-            if (
-                device.type ==
-                AudioDeviceInfo.TYPE_USB_HEADSET
-            ) {
-
-                return device
-            }
-        }
+        stopAudioRelayInternal()
 
 
-        return null
-    }
-
-
-    private fun findHearingOutput(
-        audioManager: AudioManager
-    ): AudioDeviceInfo? {
-
-        val outputs =
-            audioManager.getDevices(
-                AudioManager.GET_DEVICES_OUTPUTS
-            )
-
-
-        for (device in outputs) {
-
-            if (
-                device.type ==
-                AudioDeviceInfo.TYPE_HEARING_AID
-            ) {
-
-                return device
-            }
-
-
-            if (
-                Build.VERSION.SDK_INT >= 37
-            ) {
-
-                if (
-                    device.type ==
-                    AudioDeviceInfo.TYPE_BLE_HEARING_AID
-                ) {
-
-                    return device
-                }
-            }
-        }
-
-
-        for (device in outputs) {
-
-            if (
-                device.type ==
-                AudioDeviceInfo.TYPE_BLE_HEADSET
-            ) {
-
-                return device
-            }
-
-
-            if (
-                device.type ==
-                AudioDeviceInfo.TYPE_BLE_SPEAKER
-            ) {
-
-                return device
-            }
-
-
-            if (
-                device.type ==
-                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
-            ) {
-
-                return device
-            }
-        }
-
-
-        return null
+        statusMessage =
+            "Audio test stopped."
     }
 
 
@@ -1584,7 +2314,20 @@ class FmaDebugViewModel : ViewModel() {
 
         if (currentRelay != null) {
 
-            currentRelay.stop()
+            try {
+
+                currentRelay.stop()
+
+            } catch (
+                exception: Exception
+            ) {
+
+                Log.w(
+                    TAG,
+                    "Error stopping audio relay",
+                    exception
+                )
+            }
         }
 
 
@@ -1597,57 +2340,27 @@ class FmaDebugViewModel : ViewModel() {
     }
 
 
-    private fun cancelAutoRestart() {
-
-        val runnable =
-            autoRestartRunnable
-
-
-        if (runnable != null) {
-
-            mainHandler.removeCallbacks(
-                runnable
-            )
-        }
-
-
-        autoRestartRunnable =
-            null
-    }
-
-
-    private fun cancelAudioRetry() {
-
-        val runnable =
-            audioRetryRunnable
-
-
-        if (runnable != null) {
-
-            mainHandler.removeCallbacks(
-                runnable
-            )
-        }
-
-
-        audioRetryRunnable =
-            null
-
-
-        audioRetryCount =
-            0
-    }
-
+    // =========================================================
+    // CLOSE EVERYTHING
+    // =========================================================
 
     fun close() {
+
+        Log.i(
+            TAG,
+            "Closing FMA debug ViewModel resources"
+        )
+
 
         autoModeEnabled =
             false
 
 
-        cancelAutoRestart()
+        cancelAutoRescan()
+
 
         cancelAudioRetry()
+
 
         stopAudioRelayInternal()
 
@@ -1658,11 +2371,53 @@ class FmaDebugViewModel : ViewModel() {
 
         if (currentController != null) {
 
-            currentController.stopReceiving()
 
-            currentController.stopScan()
+            try {
 
-            currentController.close()
+                currentController.stopReceiving()
+
+            } catch (
+                exception: Exception
+            ) {
+
+                Log.w(
+                    TAG,
+                    "Error stopping receive",
+                    exception
+                )
+            }
+
+
+            try {
+
+                currentController.stopScan()
+
+            } catch (
+                exception: Exception
+            ) {
+
+                Log.w(
+                    TAG,
+                    "Error stopping scan",
+                    exception
+                )
+            }
+
+
+            try {
+
+                currentController.close()
+
+            } catch (
+                exception: Exception
+            ) {
+
+                Log.w(
+                    TAG,
+                    "Error closing controller",
+                    exception
+                )
+            }
         }
 
 
@@ -1690,6 +2445,10 @@ class FmaDebugViewModel : ViewModel() {
             emptyList()
     }
 
+
+    // =========================================================
+    // HELPERS
+    // =========================================================
 
     private fun normalizeAddress(
         address: String
@@ -1720,27 +2479,51 @@ class FmaDebugViewModel : ViewModel() {
     }
 
 
+    // =========================================================
+    // VIEWMODEL DESTROYED
+    // =========================================================
+
     override fun onCleared() {
 
         close()
+
 
         super.onCleared()
     }
 
 
+    // =========================================================
+    // CONSTANTS
+    // =========================================================
+
     companion object {
+
+
+        private const val TAG =
+            "FmaDebugVM"
+
 
         const val ACTION_USB_PERMISSION =
             "com.innovatex.auracast.FMA_DEBUG_USB_PERMISSION"
 
+
+        /*
+         * This is only needed if the broadcast is encrypted.
+         *
+         * It must match the Broadcast Code used by
+         * the transmitter.
+         */
         private const val BROADCAST_CODE =
             "AURA86DEMO2026"
+
 
         private const val AUTO_RESCAN_DELAY_MS =
             500L
 
+
         private const val AUDIO_RETRY_DELAY_MS =
             500L
+
 
         private const val MAX_AUDIO_RETRIES =
             10
