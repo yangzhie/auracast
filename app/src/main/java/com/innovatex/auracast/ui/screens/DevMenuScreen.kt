@@ -8,27 +8,56 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.innovatex.auracast.bluetooth.NRFBoardLink
+import com.innovatex.auracast.bluetooth.BoardState
 import com.innovatex.auracast.ui.navigation.Accessibility
 import com.innovatex.auracast.ui.navigation.Arrived
 import com.innovatex.auracast.ui.navigation.Home
 import com.innovatex.auracast.ui.navigation.Journey
+import com.innovatex.auracast.ui.navigation.JourneyPreview
 import com.innovatex.auracast.ui.navigation.RouteConfirm
 import com.innovatex.auracast.ui.navigation.RouteSelect
 import com.innovatex.auracast.ui.navigation.ScanDebug
 import com.innovatex.auracast.ui.navigation.SetupCheck
-import com.innovatex.auracast.ui.navigation.JourneyPreview
+import com.innovatex.auracast.ui.theme.Muted
 
 @Composable
 fun DevMenuScreen(
     modifier: Modifier = Modifier,
     onGo: (Any) -> Unit = {}
 ) {
+    val context = LocalContext.current
+
+    var boardConnected by remember { mutableStateOf(false) }
+    var boardState by remember { mutableStateOf<BoardState?>(null) }
+
+    val boardLink = remember {
+        NRFBoardLink(
+            context = context.applicationContext,
+            onStateChanged = { boardState = it },
+            onConnectionChanged = { boardConnected = it }
+        )
+    }
+
+    // Tear the connection down if this screen goes away.
+    DisposableEffect(Unit) {
+        onDispose { boardLink.disconnect() }
+    }
+
     val destinations: List<Pair<String, Any>> = listOf(
         "01 · Home" to Home,
         "02 · Setup check" to SetupCheck,
@@ -64,6 +93,64 @@ fun DevMenuScreen(
                 Text(label)
             }
             Spacer(Modifier.height(8.dp))
+        }
+
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            text = "Assistant board",
+            style = MaterialTheme.typography.titleMedium
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = if (boardConnected) {
+                "Connected · ${boardState?.name ?: "no state yet"}"
+            } else {
+                "Not connected"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = Muted
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        Button(
+            onClick = { boardLink.connect() },
+            enabled = !boardConnected,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Connect to board")
+        }
+        Spacer(Modifier.height(8.dp))
+
+        (1..4).forEach { stop ->
+            OutlinedButton(
+                onClick = { boardLink.requestStop(stop) },
+                enabled = boardConnected,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Request stop $stop")
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        OutlinedButton(
+            onClick = { boardLink.requestStop(0) },
+            enabled = boardConnected,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Stop listening")
+        }
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = { boardLink.disconnect() },
+            enabled = boardConnected,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Disconnect from board")
         }
     }
 }
