@@ -3,203 +3,253 @@ package com.innovatex.auracast.ui.screens
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import com.innovatex.auracast.R
+import com.innovatex.auracast.ui.i18n.appString
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
-
 import com.innovatex.auracast.components.SetupCheckViewModel
-import com.innovatex.auracast.ui.theme.Muted
-import com.innovatex.auracast.ui.theme.ReceivingGreen
-import com.innovatex.auracast.ui.theme.SignalAmber
-import com.innovatex.auracast.ui.theme.OnSignalAmber
+import com.innovatex.auracast.ui.theme.AppearanceMode
+import com.innovatex.auracast.ui.theme.LocalAccessibilitySettings
 
 @Composable
 fun SetupCheckScreen(
     modifier: Modifier = Modifier,
     onContinue: () -> Unit = {}
 ) {
-    // Get current context
     val context = LocalContext.current
-    // Initialize view model
-    val viewModel: SetupCheckViewModel = viewModel()
-
-    // OS shows the permissions prompt
-    // ActivityResult is general mechanism for any interaction with another screen
-    val permLauncher = rememberLauncherForActivityResult(
-        // Defines what goes in and out
-        contract = ActivityResultContracts.RequestMultiplePermissions()
+    val vm: SetupCheckViewModel = viewModel()
+    val status = vm.status
+    val permissions = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
     ) {
-        viewModel.refresh(context)
+        vm.refresh(context)
     }
 
-    // Status of the view model's current context
-    val status = viewModel.status
-
-    // Refreshes the context every time screen comes back to foreground
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        // Pass current context to refresh
-        viewModel.refresh(context)
+        vm.refresh(context)
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-    ) {
-        Text(
-            text = "Before you start",
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Three things need to be on for announcements to reach your hearing device.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = Muted
-        )
+    val bluetoothDetail = if (status.bluetoothReady) {
+        appString(R.string.bluetooth_ready_detail)
+    } else {
+        appString(R.string.bluetooth_action_detail)
+    }
+    val locationDetail = if (status.locationGranted) {
+        appString(R.string.location_ready_detail)
+    } else {
+        appString(R.string.location_action_detail)
+    }
+    val hearingDetail = if (status.hearingDeviceConnected) {
+        appString(R.string.hearing_ready_detail)
+    } else {
+        appString(R.string.hearing_action_detail)
+    }
 
-        Spacer(Modifier.height(20.dp))
-
-        SetupCheckRow(
-            isSet = status.bluetoothReady,
-            title = "Bluetooth",
-            detail = if (status.bluetoothReady) {
-                "On"
-            } else {
-                "Turn Bluetooth on and allow this app to use it"
-            }
-        )
-        HorizontalDivider()
-        SetupCheckRow(
-            isSet = status.locationGranted,
-            title = "Location",
-            detail = if (status.locationGranted) {
-                "Allowed while using the app"
-            } else {
-                "Needed to know which stop you're at"
-            }
-        )
-        HorizontalDivider()
-        SetupCheckRow(
-            isSet = status.hearingDeviceConnected,
-            title = "Hearing device",
-            detail = if (status.hearingDeviceConnected) {
-                "Connected and ready"
-            } else {
-                "Connect LE Audio hearing aids or earbuds — your phone passes " +
-                        "announcements to them, and can't play them through its own speaker."
-            }
-        )
-
-        Spacer(Modifier.height(20.dp))
-
+    Column(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(16.dp)
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            Text(appString(R.string.setup_step), style = MaterialTheme.typography.labelLarge)
             Text(
-                text = "Why a hearing device?",
-                style = MaterialTheme.typography.bodyMedium,
+                appString(R.string.device_setup),
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.height(4.dp))
             Text(
-                text = "Auracast sends audio straight to your hearing aids. The phone's job is to pick the right channel, not to play the sound.",
-                style = MaterialTheme.typography.bodyMedium
+                appString(R.string.setup_intro),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
 
-        Spacer(Modifier.weight(1f))
+            ReadinessCard(appString(R.string.bluetooth), status.bluetoothReady, bluetoothDetail)
+            ReadinessCard(appString(R.string.location), status.locationGranted, locationDetail)
+            ReadinessCard(appString(R.string.hearing_device), status.hearingDeviceConnected, hearingDetail)
 
-        Button(
-            onClick = {
-                if (status.allReady) {
-                    onContinue()
-                } else {
-                    permLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.BLUETOOTH_CONNECT,
-                            Manifest.permission.BLUETOOTH_SCAN,
-                            Manifest.permission.ACCESS_FINE_LOCATION
-                        )
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null)
+                    Text(
+                        appString(R.string.planning_without_device),
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
-            },
-            modifier = Modifier.fillMaxWidth()
+            }
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(if (status.allReady) "Continue" else "Grant permissions")
+            if (!status.bluetoothReady || !status.locationGranted) {
+                OutlinedButton(
+                    onClick = {
+                        permissions.launch(
+                            arrayOf(
+                                Manifest.permission.BLUETOOTH_CONNECT,
+                                Manifest.permission.BLUETOOTH_SCAN,
+                                Manifest.permission.ACCESS_FINE_LOCATION
+                            )
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(appString(R.string.allow_permissions))
+                }
+            }
+
+            
+            if (!status.hearingDeviceConnected) {
+                Text(
+                    appString(R.string.no_hearing_warning),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (!status.bluetoothReady || !status.locationGranted) {
+                Text(
+                    appString(R.string.bluetooth_location_warning),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Button(
+                onClick = {
+                    onContinue()
+                },
+                modifier = Modifier.fillMaxWidth().height(58.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(appString(R.string.continue_route))
+            }
+            OutlinedButton(
+                onClick = { vm.refresh(context) },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(appString(R.string.refresh_checks))
+            }
         }
     }
 }
 
 @Composable
-fun SetupCheckRow(
-    isSet: Boolean,
-    title: String,
-    detail: String,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
+private fun ReadinessCard(title: String, isSet: Boolean, detail: String) {
+    val colours = MaterialTheme.colorScheme
+    val isColourful = LocalAccessibilitySettings.current.appearance == AppearanceMode.COLOURFUL
+    val backgroundColour = if (isColourful) {
+        if (isSet) {
+            colours.secondaryContainer
+        } else {
+            Color(0xFFFFF0CB)
+        }
+    } else {
+        colours.surface
+    }
+    val indicatorColour = if (isColourful) {
+        if (isSet) {
+            colours.secondary
+        } else {
+            Color(0xFF825200)
+        }
+    } else {
+        colours.onSurface
+    }
+
+    val stateText = if (isSet) {
+        appString(R.string.ready)
+    } else {
+        appString(R.string.action_needed)
+    }
+    val accessibleStatus = appString(R.string.status_accessibility, title, stateText, detail)
+    val statusIcon = if (isSet) {
+        Icons.Default.CheckCircle
+    } else {
+        Icons.Default.WarningAmber
+    }
+
+    Card(
+        modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp)
+            .semantics { contentDescription = accessibleStatus },
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = backgroundColour)
     ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(if (isSet) ReceivingGreen else SignalAmber),
-            contentAlignment = Alignment.Center
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Icon(
-                imageVector = if (isSet) Icons.Default.Check else Icons.Default.Warning,
+                imageVector = statusIcon,
+                tint = indicatorColour,
                 contentDescription = null,
-                tint = if (isSet) Color.White else OnSignalAmber,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(28.dp)
             )
-        }
-        Spacer(Modifier.width(16.dp))
-        Column {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = detail,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Muted
+                stateText,
+                style = MaterialTheme.typography.labelSmall,
+                color = indicatorColour
             )
         }
     }
