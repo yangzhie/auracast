@@ -29,6 +29,10 @@ class JourneyViewModel : ViewModel() {
         private set
 
 
+    // =========================================================
+    // FMA120
+    // =========================================================
+
     private var fmaReceiver:
             Fma120ReceiverController? = null
 
@@ -37,8 +41,24 @@ class JourneyViewModel : ViewModel() {
             Context? = null
 
 
+    // =========================================================
+    // AUDIO
+    // =========================================================
+
     private var audioRelay:
             UsbAudioRelay? = null
+
+
+    private var audioRetryCount =
+        0
+
+
+    // =========================================================
+    // JOURNEY STATE
+    // =========================================================
+
+    private var journeyActive =
+        false
 
 
     private var connecting =
@@ -49,24 +69,64 @@ class JourneyViewModel : ViewModel() {
         false
 
 
-    private var journeyActive =
-        false
+    // =========================================================
+    // FMA SOURCES
+    // =========================================================
+
+    /*
+     * All transmitters found during the current scan window.
+     *
+     * Key:
+     * broadcastIDs
+     */
+    private val discoveredFmaSources =
+        mutableMapOf<String, FmaReceiverBroadcast>()
 
 
-    private var pendingSource:
+    /*
+     * Transmitters already successfully used.
+     *
+     * This prevents:
+     *
+     * A -> B -> A -> B
+     *
+     * Later, when you give me the four unique IDs,
+     * we can replace this with an exact ordered list.
+     */
+    private val visitedFmaBroadcastIds =
+        mutableSetOf<String>()
+
+
+    /*
+     * Temporarily ignore transmitters that repeatedly
+     * fail to connect.
+     */
+    private val ignoredUntil =
+        mutableMapOf<String, Long>()
+
+
+    private var pendingFmaSource:
             FmaReceiverBroadcast? = null
 
 
-    private var activeSource:
+    private var activeFmaSource:
             FmaReceiverBroadcast? = null
 
+
+    // =========================================================
+    // SCAN / CONNECTION CONTROL
+    // =========================================================
 
     private var scanAttempt =
         0
 
 
-    private var audioRetryCount =
+    private var connectionAttempt =
         0
+
+
+    private var selectionScheduled =
+        false
 
 
     private val mainHandler =
@@ -75,100 +135,131 @@ class JourneyViewModel : ViewModel() {
         )
 
 
-    /*
-     * ---------------------------------------------------------
-     * Scan watchdog
-     *
-     * If one FMA120 scan does not find anything,
-     * restart the scan instead of waiting forever.
-     * ---------------------------------------------------------
-     */
+    // =========================================================
+    // SELECT STRONGEST TRANSMITTER
+    // =========================================================
 
-    private val scanWatchdogRunnable =
+    private val selectStrongestRunnable =
         Runnable {
+
+            selectionScheduled =
+                false
+
 
             if (!journeyActive) {
                 return@Runnable
             }
 
+
             if (connected) {
                 return@Runnable
             }
+
 
             if (connecting) {
                 return@Runnable
             }
 
 
-            Log.w(
-                TAG,
-                "SCAN: no transmitter found during scan window"
-            )
+            val now =
+                System.currentTimeMillis()
 
 
-            restartFmaScan()
-        }
+            /*
+             * Remove expired temporary ignores.
+             */
+            ignoredUntil.entries.removeAll {
+                    entry ->
 
-
-    /*
-     * Used after stopping an old scan.
-     */
-    private val scanRestartRunnable =
-        Runnable {
-
-            if (!journeyActive) {
-                return@Runnable
-            }
-
-            if (connected) {
-                return@Runnable
-            }
-
-            if (connecting) {
-                return@Runnable
+                entry.value <= now
             }
 
 
-            startFmaSearch()
-        }
+            var strongest:
+                    FmaReceiverBroadcast? = null
 
 
-    /*
-     * Sends the receive command shortly after
-     * stopping discovery.
-     */
-    private val receiveRunnable =
-        Runnable {
-
-            if (!journeyActive) {
-                return@Runnable
-            }
-
-            if (!connecting) {
-                return@Runnable
-            }
-
-
-            val receiver =
-                fmaReceiver
-
-            val source =
-                pendingSource
-
-
-            if (
-                receiver == null ||
-                source == null
+            for (
+            source in
+            discoveredFmaSources.values
             ) {
 
-                Log.e(
+                /*
+                 * Do not go back to a transmitter
+                 * already used earlier in the journey.
+                 */
+                if (
+                    visitedFmaBroadcastIds.contains(
+                        source.broadcastIDs
+                    )
+                ) {
+
+                    Log.i(
+                        TAG,
+                        "SCAN: ignoring visited transmitter " +
+                                source.broadcastName
+                    )
+
+                    continue
+                }
+
+
+                /*
+                 * Ignore temporarily failed source.
+                 */
+                if (
+                    ignoredUntil.containsKey(
+                        source.broadcastIDs
+                    )
+                ) {
+
+                    Log.i(
+                        TAG,
+                        "SCAN: temporarily ignoring " +
+                                source.broadcastName
+                    )
+
+                    continue
+                }
+
+
+                if (strongest == null) {
+
+                    strongest =
+                        source
+
+                    continue
+                }
+
+
+                /*
+                 * RSSI:
+                 *
+                 * -45 is stronger than -70.
+                 *
+                 * Therefore the greater RSSI number wins.
+                 */
+                if (
+                    source.rssi >
+                    strongest.rssi
+                ) {
+
+                    strongest =
+                        source
+                }
+            }
+
+
+            if (strongest == null) {
+
+                Log.i(
                     TAG,
-                    "CONNECT: receiver or pending source missing"
+                    "SCAN: no usable transmitter found"
                 )
 
-                handleConnectionFailure(
-                    "Receiver/source unavailable"
-                )
+
+                restartDirectFmaScan()
+
 
                 return@Runnable
             }
@@ -176,34 +267,86 @@ class JourneyViewModel : ViewModel() {
 
             Log.i(
                 TAG,
-                "CONNECT: sending receive command for " +
-                        source.broadcastName
+                "SCAN: strongest transmitter selected"
             )
 
 
-            receiver.receive(
-                source
+            Log.i(
+                TAG,
+                "SCAN: name=${strongest.broadcastName}"
             )
 
 
-            /*
-             * Do not remain in CONNECTING forever.
-             */
-            mainHandler.removeCallbacks(
-                connectionTimeoutRunnable
+            Log.i(
+                TAG,
+                "SCAN: RSSI=${strongest.rssi}"
             )
 
-            mainHandler.postDelayed(
-                connectionTimeoutRunnable,
-                CONNECTION_TIMEOUT_MS
+
+            Log.i(
+                TAG,
+                "SCAN: ID=${strongest.broadcastIDs}"
+            )
+
+
+            connectDirectlyToFmaSource(
+                strongest
             )
         }
 
 
+    // =========================================================
+    // SCAN WATCHDOG
+    // =========================================================
+
     /*
-     * If FMA120 never reaches streaming,
-     * abandon this connection and scan again.
+     * If FMA120 does not report any useful transmitter
+     * during the scan window, restart scanning.
      */
+    private val scanWatchdogRunnable =
+        Runnable {
+
+            if (!journeyActive) {
+                return@Runnable
+            }
+
+
+            if (connected) {
+                return@Runnable
+            }
+
+
+            if (connecting) {
+                return@Runnable
+            }
+
+
+            if (
+                discoveredFmaSources.isNotEmpty()
+            ) {
+
+                /*
+                 * We already received some results.
+                 * Selection should handle them.
+                 */
+                return@Runnable
+            }
+
+
+            Log.w(
+                TAG,
+                "SCAN: no transmitter detected - restarting"
+            )
+
+
+            restartDirectFmaScan()
+        }
+
+
+    // =========================================================
+    // CONNECTION TIMEOUT
+    // =========================================================
+
     private val connectionTimeoutRunnable =
         Runnable {
 
@@ -211,9 +354,11 @@ class JourneyViewModel : ViewModel() {
                 return@Runnable
             }
 
+
             if (!connecting) {
                 return@Runnable
             }
+
 
             if (connected) {
                 return@Runnable
@@ -222,44 +367,52 @@ class JourneyViewModel : ViewModel() {
 
             Log.e(
                 TAG,
-                "CONNECT: connection timed out"
+                "CONNECT: timeout"
             )
 
 
-            handleConnectionFailure(
+            retryPendingConnection(
                 "Connection timeout"
             )
         }
 
 
+    // =========================================================
+    // STREAM LOSS
+    // =========================================================
+
     /*
-     * Restart searching after failed connection.
+     * FMA may briefly report a non-streaming state.
+     *
+     * We wait before deciding the transmitter is really lost.
      */
-    private val reconnectRunnable =
+    private val streamLossRunnable =
         Runnable {
 
             if (!journeyActive) {
                 return@Runnable
             }
 
-            if (connected) {
+
+            if (!connected) {
                 return@Runnable
             }
 
-            if (connecting) {
-                return@Runnable
-            }
+
+            Log.w(
+                TAG,
+                "HANDOVER: current stream lost"
+            )
 
 
-            startFmaSearch()
+            handleActiveSourceLost()
         }
 
 
-    /*
-     * Retry audio device discovery because sometimes
-     * Android exposes the USB/audio route slightly later
-     * than the FMA receive-state callback.
-     */
+    // =========================================================
+    // AUDIO RETRY
+    // =========================================================
+
     private val audioRetryRunnable =
         Runnable {
 
@@ -267,9 +420,11 @@ class JourneyViewModel : ViewModel() {
                 return@Runnable
             }
 
+
             if (!connected) {
                 return@Runnable
             }
+
 
             if (audioRelay != null) {
                 return@Runnable
@@ -291,7 +446,7 @@ class JourneyViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "AUTO: startJourney() called"
+            "JOURNEY: startJourney()"
         )
 
 
@@ -299,7 +454,7 @@ class JourneyViewModel : ViewModel() {
 
             Log.i(
                 TAG,
-                "AUTO: journey already running"
+                "JOURNEY: already running"
             )
 
             return
@@ -326,20 +481,37 @@ class JourneyViewModel : ViewModel() {
             false
 
 
-        pendingSource =
-            null
-
-
-        activeSource =
-            null
-
-
         scanAttempt =
+            0
+
+
+        connectionAttempt =
             0
 
 
         audioRetryCount =
             0
+
+
+        selectionScheduled =
+            false
+
+
+        pendingFmaSource =
+            null
+
+
+        activeFmaSource =
+            null
+
+
+        discoveredFmaSources.clear()
+
+
+        visitedFmaBroadcastIds.clear()
+
+
+        ignoredUntil.clear()
 
 
         state =
@@ -361,6 +533,10 @@ class JourneyViewModel : ViewModel() {
             )
 
 
+        // =====================================================
+        // CREATE FMA120 CONTROLLER
+        // =====================================================
+
         val receiver =
             Fma120ReceiverController(
                 context =
@@ -369,10 +545,6 @@ class JourneyViewModel : ViewModel() {
                 onBroadcastFound = {
                         source ->
 
-                    /*
-                     * USB callbacks may come from another thread.
-                     * Move state/UI work onto the main thread.
-                     */
                     mainHandler.post {
 
                         onFmaBroadcastFound(
@@ -410,9 +582,13 @@ class JourneyViewModel : ViewModel() {
             receiver
 
 
+        // =====================================================
+        // OPEN FMA120
+        // =====================================================
+
         Log.i(
             TAG,
-            "AUTO: opening FMA120"
+            "FMA: opening FMA120"
         )
 
 
@@ -422,7 +598,7 @@ class JourneyViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "AUTO: FMA120 open result = $opened"
+            "FMA: open result=$opened"
         )
 
 
@@ -430,7 +606,7 @@ class JourneyViewModel : ViewModel() {
 
             Log.e(
                 TAG,
-                "AUTO: FMA120 could not be opened"
+                "FMA: unable to open receiver"
             )
 
 
@@ -449,17 +625,30 @@ class JourneyViewModel : ViewModel() {
 
 
         /*
-         * Start reliable repeated scanning.
+         * IMPORTANT:
+         *
+         * Start FMA120 scanning immediately.
+         *
+         * We do NOT wait for Android BroadcastScanner.
+         *
+         * This matches the scanning method that already
+         * worked successfully in your test.
          */
-        startFmaSearch()
+        Log.i(
+            TAG,
+            "SCAN: starting FMA120 discovery immediately"
+        )
+
+
+        startDirectFmaScan()
     }
 
 
     // =========================================================
-    // SCANNING
+    // FMA120 SCAN
     // =========================================================
 
-    private fun startFmaSearch() {
+    private fun startDirectFmaScan() {
 
         if (!journeyActive) {
             return
@@ -484,7 +673,7 @@ class JourneyViewModel : ViewModel() {
 
             Log.e(
                 TAG,
-                "SCAN: FMA120 receiver is null"
+                "SCAN: FMA receiver unavailable"
             )
 
             return
@@ -497,8 +686,15 @@ class JourneyViewModel : ViewModel() {
 
 
         mainHandler.removeCallbacks(
-            scanRestartRunnable
+            selectStrongestRunnable
         )
+
+
+        selectionScheduled =
+            false
+
+
+        discoveredFmaSources.clear()
 
 
         scanAttempt++
@@ -506,7 +702,7 @@ class JourneyViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "SCAN: starting scan attempt $scanAttempt"
+            "SCAN: attempt $scanAttempt"
         )
 
 
@@ -524,23 +720,28 @@ class JourneyViewModel : ViewModel() {
 
 
         /*
-         * Sends BC:BI
+         * Sends:
+         *
+         * BC:BI
          */
         receiver.startScan()
 
 
         /*
-         * If this scan doesn't find anything,
-         * stop it and start another clean scan.
+         * Restart if the FMA120 returns nothing.
          */
         mainHandler.postDelayed(
             scanWatchdogRunnable,
-            SCAN_WINDOW_MS
+            FMA_SCAN_WINDOW_MS
         )
     }
 
 
-    private fun restartFmaScan() {
+    // =========================================================
+    // RESTART SCAN
+    // =========================================================
+
+    private fun restartDirectFmaScan() {
 
         if (!journeyActive) {
             return
@@ -571,35 +772,52 @@ class JourneyViewModel : ViewModel() {
         )
 
 
+        mainHandler.removeCallbacks(
+            selectStrongestRunnable
+        )
+
+
+        selectionScheduled =
+            false
+
+
+        discoveredFmaSources.clear()
+
+
         Log.i(
             TAG,
-            "SCAN: restarting FMA120 scan"
+            "SCAN: stopping old scan"
         )
 
 
         /*
-         * Sends BC:BI=00
+         * Sends:
+         *
+         * BC:BI=00
          */
         receiver.stopScan()
 
 
-        /*
-         * Small pause between stop and next scan.
-         */
-        mainHandler.removeCallbacks(
-            scanRestartRunnable
-        )
-
-
         mainHandler.postDelayed(
-            scanRestartRunnable,
-            SCAN_RESTART_DELAY_MS
+            {
+
+                if (
+                    journeyActive &&
+                    !connected &&
+                    !connecting
+                ) {
+
+                    startDirectFmaScan()
+                }
+
+            },
+            FMA_SCAN_RESTART_DELAY_MS
         )
     }
 
 
     // =========================================================
-    // TRANSMITTER FOUND
+    // FMA BROADCAST FOUND
     // =========================================================
 
     private fun onFmaBroadcastFound(
@@ -613,59 +831,147 @@ class JourneyViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "SCAN: TRANSMITTER FOUND"
+            "FMA FOUND:"
         )
 
 
         Log.i(
             TAG,
-            "SCAN: name = ${source.broadcastName}"
+            "FMA FOUND: name=${source.broadcastName}"
         )
 
 
         Log.i(
             TAG,
-            "SCAN: address = ${source.address}"
+            "FMA FOUND: address=${source.address}"
         )
 
 
         Log.i(
             TAG,
-            "SCAN: RSSI = ${source.rssi}"
+            "FMA FOUND: RSSI=${source.rssi}"
         )
 
 
         Log.i(
             TAG,
-            "SCAN: broadcastIDs = ${source.broadcastIDs}"
+            "FMA FOUND: ID=${source.broadcastIDs}"
         )
 
 
         /*
-         * First transmitter wins.
+         * While receiving, don't start another FMA connection.
          *
-         * No GPS.
-         * No route matching.
-         * No stop matching.
+         * The next scan starts when the current stream is lost.
          */
         if (connected) {
+            return
+        }
+
+
+        if (connecting) {
+            return
+        }
+
+
+        /*
+         * Previous transmitter?
+         */
+        if (
+            visitedFmaBroadcastIds.contains(
+                source.broadcastIDs
+            )
+        ) {
 
             Log.i(
                 TAG,
-                "SCAN: already connected - ignoring source"
+                "FMA FOUND: already visited - ignoring"
             )
 
             return
         }
 
 
-        if (connecting) {
+        /*
+         * Failed recently?
+         */
+        val ignoredUntilTime =
+            ignoredUntil[
+                source.broadcastIDs
+            ]
+
+
+        if (
+            ignoredUntilTime != null &&
+            ignoredUntilTime >
+            System.currentTimeMillis()
+        ) {
 
             Log.i(
                 TAG,
-                "SCAN: connection already in progress"
+                "FMA FOUND: temporarily ignored"
             )
 
+            return
+        }
+
+
+        /*
+         * Store/update transmitter.
+         *
+         * If FMA reports it again with a new RSSI,
+         * the latest value replaces the old one.
+         */
+        discoveredFmaSources[
+            source.broadcastIDs
+        ] =
+            source
+
+
+        /*
+         * Give FMA120 a short period to report all nearby
+         * transmitters before choosing the strongest.
+         *
+         * We DON'T immediately connect to the first packet.
+         */
+        if (!selectionScheduled) {
+
+            selectionScheduled =
+                true
+
+
+            mainHandler.removeCallbacks(
+                selectStrongestRunnable
+            )
+
+
+            mainHandler.postDelayed(
+                selectStrongestRunnable,
+                SOURCE_SELECTION_WINDOW_MS
+            )
+        }
+    }
+
+
+    // =========================================================
+    // CONNECT
+    // =========================================================
+
+    private fun connectDirectlyToFmaSource(
+        source: FmaReceiverBroadcast
+    ) {
+
+        if (!journeyActive) {
+            return
+        }
+
+
+        if (connected) {
+            return
+        }
+
+
+        if (connecting) {
             return
         }
 
@@ -678,32 +984,40 @@ class JourneyViewModel : ViewModel() {
 
             Log.e(
                 TAG,
-                "SCAN: FMA receiver is null"
+                "CONNECT: receiver unavailable"
             )
 
             return
         }
 
 
-        /*
-         * We found a transmitter.
-         * Cancel scan retry.
-         */
         mainHandler.removeCallbacks(
             scanWatchdogRunnable
         )
 
 
         mainHandler.removeCallbacks(
-            scanRestartRunnable
+            selectStrongestRunnable
         )
+
+
+        selectionScheduled =
+            false
 
 
         connecting =
             true
 
 
-        pendingSource =
+        connected =
+            false
+
+
+        connectionAttempt =
+            0
+
+
+        pendingFmaSource =
             source
 
 
@@ -722,38 +1036,114 @@ class JourneyViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "CONNECT: automatically connecting to " +
-                    source.broadcastName
+            "CONNECT: selected ${source.broadcastName}"
+        )
+
+
+        Log.i(
+            TAG,
+            "CONNECT: RSSI=${source.rssi}"
+        )
+
+
+        Log.i(
+            TAG,
+            "CONNECT: ID=${source.broadcastIDs}"
         )
 
 
         /*
-         * Stop FMA discovery before asking it to
-         * receive the selected broadcast.
+         * Stop scanning before receiving.
          */
         receiver.stopScan()
 
 
-        /*
-         * Short application-side delay.
-         *
-         * This avoids immediately sending another
-         * command after stopScan().
-         */
-        mainHandler.removeCallbacks(
-            receiveRunnable
+        sendReceiveCommandAfterDelay(
+            source
         )
+    }
 
+
+    // =========================================================
+    // SEND RECEIVE COMMAND
+    // =========================================================
+
+    private fun sendReceiveCommandAfterDelay(
+        source: FmaReceiverBroadcast
+    ) {
 
         mainHandler.postDelayed(
-            receiveRunnable,
+            {
+
+                if (!journeyActive) {
+                    return@postDelayed
+                }
+
+
+                if (!connecting) {
+                    return@postDelayed
+                }
+
+
+                if (connected) {
+                    return@postDelayed
+                }
+
+
+                val receiver =
+                    fmaReceiver
+
+
+                if (receiver == null) {
+                    return@postDelayed
+                }
+
+
+                connectionAttempt++
+
+
+                Log.i(
+                    TAG,
+                    "CONNECT: receive attempt " +
+                            "$connectionAttempt/" +
+                            "$MAX_CONNECTION_ATTEMPTS"
+                )
+
+
+                Log.i(
+                    TAG,
+                    "CONNECT: sending receive command"
+                )
+
+
+                /*
+                 * Sends:
+                 *
+                 * BC:BA=<broadcastIDs>
+                 */
+                receiver.receive(
+                    source
+                )
+
+
+                mainHandler.removeCallbacks(
+                    connectionTimeoutRunnable
+                )
+
+
+                mainHandler.postDelayed(
+                    connectionTimeoutRunnable,
+                    CONNECTION_TIMEOUT_MS
+                )
+
+            },
             RECEIVE_AFTER_SCAN_DELAY_MS
         )
     }
 
 
     // =========================================================
-    // FMA RECEIVE STATE
+    // RECEIVE STATE
     // =========================================================
 
     private fun onFmaReceiveStateChanged(
@@ -767,16 +1157,17 @@ class JourneyViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "RECEIVE: sourceId = ${receiveState.sourceId}, " +
+            "FMA STATE: " +
+                    "source=${receiveState.sourceId}, " +
                     "sync=${receiveState.syncState}, " +
                     "encryption=${receiveState.encryptionState}, " +
                     "BIS=${receiveState.bisState}"
         )
 
 
-        // -----------------------------------------------------
-        // Encrypted broadcast
-        // -----------------------------------------------------
+        // =====================================================
+        // BROADCAST CODE REQUIRED
+        // =====================================================
 
         if (
             receiveState.needsBroadcastCode
@@ -790,7 +1181,7 @@ class JourneyViewModel : ViewModel() {
 
                 Log.i(
                     TAG,
-                    "RECEIVE: sending Broadcast Code"
+                    "FMA: sending Broadcast Code"
                 )
 
 
@@ -808,9 +1199,9 @@ class JourneyViewModel : ViewModel() {
         }
 
 
-        // -----------------------------------------------------
-        // Synchronisation failed
-        // -----------------------------------------------------
+        // =====================================================
+        // SYNC FAILED
+        // =====================================================
 
         if (
             receiveState.syncFailed
@@ -818,22 +1209,29 @@ class JourneyViewModel : ViewModel() {
 
             Log.e(
                 TAG,
-                "RECEIVE: synchronization failed"
+                "FMA: synchronization failed"
             )
 
 
-            handleConnectionFailure(
-                "Synchronization failed"
-            )
+            if (connected) {
+
+                handleActiveSourceLost()
+
+            } else {
+
+                retryPendingConnection(
+                    "Synchronization failed"
+                )
+            }
 
 
             return
         }
 
 
-        // -----------------------------------------------------
-        // Streaming success
-        // -----------------------------------------------------
+        // =====================================================
+        // STREAMING
+        // =====================================================
 
         if (
             receiveState.isStreaming
@@ -841,7 +1239,15 @@ class JourneyViewModel : ViewModel() {
 
             Log.i(
                 TAG,
-                "RECEIVE: SUCCESS - FMA120 STREAMING"
+                "FMA: SUCCESS - STREAMING"
+            )
+
+
+            /*
+             * Cancel any pending stream-loss decision.
+             */
+            mainHandler.removeCallbacks(
+                streamLossRunnable
             )
 
 
@@ -850,9 +1256,41 @@ class JourneyViewModel : ViewModel() {
             )
 
 
-            mainHandler.removeCallbacks(
-                receiveRunnable
-            )
+            val source =
+                pendingFmaSource
+
+
+            if (source != null) {
+
+                activeFmaSource =
+                    source
+
+
+                /*
+                 * Remember this transmitter.
+                 *
+                 * When searching later, it will be ignored.
+                 */
+                visitedFmaBroadcastIds.add(
+                    source.broadcastIDs
+                )
+
+
+                Log.i(
+                    TAG,
+                    "CONNECTED: ${source.broadcastName}"
+                )
+
+
+                Log.i(
+                    TAG,
+                    "CONNECTED: ID=${source.broadcastIDs}"
+                )
+            }
+
+
+            pendingFmaSource =
+                null
 
 
             connecting =
@@ -863,63 +1301,128 @@ class JourneyViewModel : ViewModel() {
                 true
 
 
-            activeSource =
-                pendingSource
+            connectionAttempt =
+                0
 
 
-            pendingSource =
-                null
+            scanAttempt =
+                0
 
 
-            state =
-                state?.copy(
-                    phase =
-                        JourneyPhase.RECEIVING,
-
-                    phaseStartedAt =
-                        System.currentTimeMillis()
-                )
+            discoveredFmaSources.clear()
 
 
             /*
-             * FMA120 is now receiving Auracast.
+             * Update UI stop index.
              *
-             * Start:
+             * First transmitter:
+             * currentStopIndex = 0
              *
-             * FMA120 USB audio
-             *       ↓
-             * Android
-             *       ↓
-             * headphones / hearing device
+             * Second:
+             * currentStopIndex = 1
+             *
+             * etc.
              */
-            if (audioRelay == null) {
-
-                Log.i(
-                    TAG,
-                    "AUDIO: starting automatic audio"
-                )
+            val current =
+                state
 
 
-                startAutomaticAudio()
+            if (current != null) {
+
+                var newStopIndex =
+                    visitedFmaBroadcastIds.size -
+                            1
+
+
+                if (
+                    current.route.stops.isNotEmpty()
+                ) {
+
+                    newStopIndex =
+                        newStopIndex.coerceAtMost(
+                            current.route.stops.lastIndex
+                        )
+                }
+
+
+                newStopIndex =
+                    newStopIndex.coerceAtLeast(
+                        0
+                    )
+
+
+                state =
+                    current.copy(
+                        currentStopIndex =
+                            newStopIndex,
+
+                        phase =
+                            JourneyPhase.RECEIVING,
+
+                        phaseStartedAt =
+                            System.currentTimeMillis()
+                    )
             }
 
 
+            /*
+             * FMA120
+             *      ↓ USB
+             * Android
+             *      ↓
+             * headphones / hearing device
+             */
+            startAutomaticAudio()
+
+
             return
+        }
+
+
+        // =====================================================
+        // STREAM STOPPED
+        // =====================================================
+
+        /*
+         * If we were successfully connected and FMA now
+         * reports a non-streaming state, wait briefly.
+         *
+         * If streaming returns, the timer is cancelled above.
+         *
+         * Otherwise move to next transmitter.
+         */
+        if (connected) {
+
+            Log.w(
+                TAG,
+                "FMA: streaming state lost - waiting for confirmation"
+            )
+
+
+            mainHandler.removeCallbacks(
+                streamLossRunnable
+            )
+
+
+            mainHandler.postDelayed(
+                streamLossRunnable,
+                STREAM_LOSS_CONFIRM_MS
+            )
         }
     }
 
 
     // =========================================================
-    // CONNECTION FAILURE / RETRY
+    // CONNECTION RETRY
     // =========================================================
 
-    private fun handleConnectionFailure(
+    private fun retryPendingConnection(
         reason: String
     ) {
 
-        Log.e(
+        Log.w(
             TAG,
-            "CONNECT: connection failed - $reason"
+            "CONNECT: failed - $reason"
         )
 
 
@@ -928,17 +1431,116 @@ class JourneyViewModel : ViewModel() {
         )
 
 
-        mainHandler.removeCallbacks(
-            receiveRunnable
+        val source =
+            pendingFmaSource
+
+
+        if (source == null) {
+
+            connecting =
+                false
+
+
+            state =
+                state?.copy(
+                    deviceAddress =
+                        null,
+
+                    phase =
+                        JourneyPhase.SEARCHING,
+
+                    phaseStartedAt =
+                        System.currentTimeMillis()
+                )
+
+
+            restartDirectFmaScan()
+
+
+            return
+        }
+
+
+        // =====================================================
+        // RETRY SAME SOURCE
+        // =====================================================
+
+        if (
+            connectionAttempt <
+            MAX_CONNECTION_ATTEMPTS
+        ) {
+
+            Log.i(
+                TAG,
+                "CONNECT: retrying ${source.broadcastName}"
+            )
+
+
+            val receiver =
+                fmaReceiver
+
+
+            if (receiver != null) {
+
+                receiver.stopReceiving()
+            }
+
+
+            mainHandler.postDelayed(
+                {
+
+                    if (
+                        journeyActive &&
+                        connecting &&
+                        !connected
+                    ) {
+
+                        sendReceiveCommandAfterDelay(
+                            source
+                        )
+                    }
+
+                },
+                CONNECTION_RETRY_DELAY_MS
+            )
+
+
+            return
+        }
+
+
+        // =====================================================
+        // GIVE UP TEMPORARILY
+        // =====================================================
+
+        Log.e(
+            TAG,
+            "CONNECT: giving up temporarily on " +
+                    source.broadcastName
         )
 
 
-        mainHandler.removeCallbacks(
-            scanWatchdogRunnable
-        )
+        ignoredUntil[
+            source.broadcastIDs
+        ] =
+            System.currentTimeMillis() +
+                    FAILED_SOURCE_COOLDOWN_MS
 
 
-        stopAutomaticAudio()
+        val receiver =
+            fmaReceiver
+
+
+        if (receiver != null) {
+
+            receiver.stopReceiving()
+
+            receiver.stopScan()
+        }
+
+
+        pendingFmaSource =
+            null
 
 
         connecting =
@@ -949,12 +1551,82 @@ class JourneyViewModel : ViewModel() {
             false
 
 
-        pendingSource =
-            null
+        connectionAttempt =
+            0
 
 
-        activeSource =
-            null
+        state =
+            state?.copy(
+                deviceAddress =
+                    null,
+
+                phase =
+                    JourneyPhase.SEARCHING,
+
+                phaseStartedAt =
+                    System.currentTimeMillis()
+            )
+
+
+        mainHandler.postDelayed(
+            {
+
+                if (
+                    journeyActive &&
+                    !connected &&
+                    !connecting
+                ) {
+
+                    startDirectFmaScan()
+                }
+
+            },
+            CONNECTION_RETRY_DELAY_MS
+        )
+    }
+
+
+    // =========================================================
+    // ACTIVE SOURCE LOST
+    // =========================================================
+
+    private fun handleActiveSourceLost() {
+
+        if (!connected) {
+            return
+        }
+
+
+        Log.i(
+            TAG,
+            "HANDOVER: leaving current transmitter"
+        )
+
+
+        val previous =
+            activeFmaSource
+
+
+        if (previous != null) {
+
+            Log.i(
+                TAG,
+                "HANDOVER: previous=${previous.broadcastName}"
+            )
+        }
+
+
+        mainHandler.removeCallbacks(
+            streamLossRunnable
+        )
+
+
+        mainHandler.removeCallbacks(
+            connectionTimeoutRunnable
+        )
+
+
+        stopAutomaticAudio()
 
 
         val receiver =
@@ -964,10 +1636,39 @@ class JourneyViewModel : ViewModel() {
         if (receiver != null) {
 
             /*
-             * Sends BC:BA=00
+             * Stop current Auracast source.
              */
             receiver.stopReceiving()
+
+
+            /*
+             * Ensure previous scan is stopped.
+             */
+            receiver.stopScan()
         }
+
+
+        connected =
+            false
+
+
+        connecting =
+            false
+
+
+        activeFmaSource =
+            null
+
+
+        pendingFmaSource =
+            null
+
+
+        connectionAttempt =
+            0
+
+
+        discoveredFmaSources.clear()
 
 
         state =
@@ -976,7 +1677,7 @@ class JourneyViewModel : ViewModel() {
                     null,
 
                 phase =
-                    JourneyPhase.DROP_OUT,
+                    JourneyPhase.SEARCHING,
 
                 phaseStartedAt =
                     System.currentTimeMillis()
@@ -984,16 +1685,31 @@ class JourneyViewModel : ViewModel() {
 
 
         /*
-         * Automatically return to searching.
+         * Search for another transmitter.
+         *
+         * The previous broadcast ID is already in
+         * visitedFmaBroadcastIds, so it will be ignored.
          */
-        mainHandler.removeCallbacks(
-            reconnectRunnable
-        )
-
-
         mainHandler.postDelayed(
-            reconnectRunnable,
-            CONNECTION_RETRY_DELAY_MS
+            {
+
+                if (
+                    journeyActive &&
+                    !connected &&
+                    !connecting
+                ) {
+
+                    Log.i(
+                        TAG,
+                        "HANDOVER: searching for next transmitter"
+                    )
+
+
+                    startDirectFmaScan()
+                }
+
+            },
+            NEXT_SOURCE_SEARCH_DELAY_MS
         )
     }
 
@@ -1010,12 +1726,6 @@ class JourneyViewModel : ViewModel() {
 
 
         if (!connected) {
-
-            Log.i(
-                TAG,
-                "AUDIO: FMA120 is not streaming yet"
-            )
-
             return
         }
 
@@ -1039,16 +1749,16 @@ class JourneyViewModel : ViewModel() {
 
             Log.e(
                 TAG,
-                "AUDIO: application context unavailable"
+                "AUDIO: context unavailable"
             )
 
             return
         }
 
 
-        // -----------------------------------------------------
-        // RECORD_AUDIO permission
-        // -----------------------------------------------------
+        // =====================================================
+        // RECORD_AUDIO PERMISSION
+        // =====================================================
 
         val permission =
             ContextCompat.checkSelfPermission(
@@ -1064,7 +1774,7 @@ class JourneyViewModel : ViewModel() {
 
             Log.e(
                 TAG,
-                "AUDIO: RECORD_AUDIO permission not granted"
+                "AUDIO: RECORD_AUDIO permission missing"
             )
 
             return
@@ -1089,7 +1799,7 @@ class JourneyViewModel : ViewModel() {
 
 
         // =====================================================
-        // Find FMA120 USB input
+        // FIND FMA120 USB INPUT
         // =====================================================
 
         val inputs =
@@ -1103,15 +1813,14 @@ class JourneyViewModel : ViewModel() {
 
 
         /*
-         * First try to identify the actual FMA120
-         * by its product name.
+         * Prefer device that actually identifies as
+         * FMA120 / FlooGoo.
          */
         for (device in inputs) {
 
             Log.i(
                 TAG,
                 "AUDIO INPUT: " +
-                        "id=${device.id}, " +
                         "type=${device.type}, " +
                         "name=${device.productName}"
             )
@@ -1123,7 +1832,7 @@ class JourneyViewModel : ViewModel() {
                     .uppercase()
 
 
-            val isUsb =
+            val usb =
                 device.type ==
                         AudioDeviceInfo.TYPE_USB_DEVICE ||
                         device.type ==
@@ -1131,7 +1840,7 @@ class JourneyViewModel : ViewModel() {
 
 
             if (
-                isUsb &&
+                usb &&
                 (
                         name.contains("FMA120") ||
                                 name.contains("FLOOGOO")
@@ -1147,8 +1856,7 @@ class JourneyViewModel : ViewModel() {
 
 
         /*
-         * Fallback:
-         * use the first USB audio input.
+         * Fallback to first USB audio input.
          */
         if (usbInput == null) {
 
@@ -1182,9 +1890,16 @@ class JourneyViewModel : ViewModel() {
 
         if (usbInput == null) {
 
-            scheduleAudioRetry(
-                "FMA120 USB audio input not found"
+            Log.w(
+                TAG,
+                "AUDIO: FMA120 USB input not found"
             )
+
+
+            scheduleAudioRetry(
+                "FMA120 USB input missing"
+            )
+
 
             return
         }
@@ -1192,14 +1907,13 @@ class JourneyViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "AUDIO: FMA120 USB INPUT FOUND: " +
-                    "${usbInput.productName}, " +
-                    "type=${usbInput.type}"
+            "AUDIO: USB INPUT FOUND: " +
+                    usbInput.productName
         )
 
 
         // =====================================================
-        // Find headphones / hearing aid
+        // FIND HEADPHONE / HEARING OUTPUT
         // =====================================================
 
         val outputs =
@@ -1213,14 +1927,13 @@ class JourneyViewModel : ViewModel() {
 
 
         /*
-         * Prefer actual hearing aid output.
+         * Prefer hearing aid.
          */
         for (device in outputs) {
 
             Log.i(
                 TAG,
                 "AUDIO OUTPUT: " +
-                        "id=${device.id}, " +
                         "type=${device.type}, " +
                         "name=${device.productName}"
             )
@@ -1257,8 +1970,7 @@ class JourneyViewModel : ViewModel() {
 
 
         /*
-         * If no hearing aid is connected,
-         * use normal Bluetooth headphones/speaker.
+         * Normal Bluetooth headphones fallback.
          */
         if (hearingOutput == null) {
 
@@ -1304,9 +2016,16 @@ class JourneyViewModel : ViewModel() {
 
         if (hearingOutput == null) {
 
-            scheduleAudioRetry(
-                "Bluetooth/hearing output not found"
+            Log.w(
+                TAG,
+                "AUDIO: Bluetooth/hearing output not found"
             )
+
+
+            scheduleAudioRetry(
+                "Bluetooth/hearing output missing"
+            )
+
 
             return
         }
@@ -1315,13 +2034,12 @@ class JourneyViewModel : ViewModel() {
         Log.i(
             TAG,
             "AUDIO: OUTPUT FOUND: " +
-                    "${hearingOutput.productName}, " +
-                    "type=${hearingOutput.type}"
+                    hearingOutput.productName
         )
 
 
         // =====================================================
-        // Start FMA120 → Android → headphones relay
+        // START RELAY
         // =====================================================
 
         val relay =
@@ -1336,7 +2054,7 @@ class JourneyViewModel : ViewModel() {
 
                         Log.e(
                             TAG,
-                            "AUDIO RELAY ERROR: $message"
+                            "AUDIO ERROR: $message"
                         )
 
 
@@ -1382,7 +2100,7 @@ class JourneyViewModel : ViewModel() {
 
             Log.e(
                 TAG,
-                "AUDIO: UsbAudioRelay.start() returned false"
+                "AUDIO: relay failed to start"
             )
 
 
@@ -1390,7 +2108,7 @@ class JourneyViewModel : ViewModel() {
 
 
             scheduleAudioRetry(
-                "Audio relay could not start"
+                "UsbAudioRelay.start() failed"
             )
 
 
@@ -1413,17 +2131,21 @@ class JourneyViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "AUDIO: SUCCESS - AUDIO RELAY STARTED"
+            "AUDIO: SUCCESS - RELAY STARTED"
         )
 
 
         Log.i(
             TAG,
             "AUDIO: ${usbInput.productName} -> " +
-                    "${hearingOutput.productName}"
+                    hearingOutput.productName
         )
     }
 
+
+    // =========================================================
+    // AUDIO RETRY
+    // =========================================================
 
     private fun scheduleAudioRetry(
         reason: String
@@ -1451,9 +2173,7 @@ class JourneyViewModel : ViewModel() {
 
             Log.e(
                 TAG,
-                "AUDIO: giving up after " +
-                        "$MAX_AUDIO_RETRIES retries. " +
-                        "Reason: $reason"
+                "AUDIO: maximum retries reached: $reason"
             )
 
             return
@@ -1465,9 +2185,8 @@ class JourneyViewModel : ViewModel() {
 
         Log.w(
             TAG,
-            "AUDIO: $reason. " +
-                    "Retry $audioRetryCount/" +
-                    "$MAX_AUDIO_RETRIES"
+            "AUDIO: $reason. Retry " +
+                    "$audioRetryCount/$MAX_AUDIO_RETRIES"
         )
 
 
@@ -1482,6 +2201,10 @@ class JourneyViewModel : ViewModel() {
         )
     }
 
+
+    // =========================================================
+    // STOP AUDIO
+    // =========================================================
 
     private fun stopAutomaticAudio() {
 
@@ -1502,7 +2225,7 @@ class JourneyViewModel : ViewModel() {
 
             Log.i(
                 TAG,
-                "AUDIO: stopping audio relay"
+                "AUDIO: stopping relay"
             )
 
 
@@ -1523,7 +2246,7 @@ class JourneyViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "AUTO: ending journey"
+            "JOURNEY: ending"
         )
 
 
@@ -1531,21 +2254,13 @@ class JourneyViewModel : ViewModel() {
             false
 
 
-        /*
-         * Cancel every pending automatic operation.
-         */
+        mainHandler.removeCallbacks(
+            selectStrongestRunnable
+        )
+
+
         mainHandler.removeCallbacks(
             scanWatchdogRunnable
-        )
-
-
-        mainHandler.removeCallbacks(
-            scanRestartRunnable
-        )
-
-
-        mainHandler.removeCallbacks(
-            receiveRunnable
         )
 
 
@@ -1555,7 +2270,7 @@ class JourneyViewModel : ViewModel() {
 
 
         mainHandler.removeCallbacks(
-            reconnectRunnable
+            streamLossRunnable
         )
 
 
@@ -1589,12 +2304,25 @@ class JourneyViewModel : ViewModel() {
             null
 
 
-        pendingSource =
+        discoveredFmaSources.clear()
+
+
+        visitedFmaBroadcastIds.clear()
+
+
+        ignoredUntil.clear()
+
+
+        pendingFmaSource =
             null
 
 
-        activeSource =
+        activeFmaSource =
             null
+
+
+        selectionScheduled =
+            false
 
 
         connecting =
@@ -1609,7 +2337,7 @@ class JourneyViewModel : ViewModel() {
             0
 
 
-        audioRetryCount =
+        connectionAttempt =
             0
 
 
@@ -1618,6 +2346,10 @@ class JourneyViewModel : ViewModel() {
     }
 
 
+    // =========================================================
+    // VIEWMODEL CLEANUP
+    // =========================================================
+
     override fun onCleared() {
 
         endJourney()
@@ -1625,6 +2357,10 @@ class JourneyViewModel : ViewModel() {
         super.onCleared()
     }
 
+
+    // =========================================================
+    // CONSTANTS
+    // =========================================================
 
     companion object {
 
@@ -1637,47 +2373,88 @@ class JourneyViewModel : ViewModel() {
 
 
         /*
-         * One scan attempt can run for 3 seconds.
-         * If no transmitter is reported, restart it.
+         * Wait this long after the first discovered source
+         * so FMA120 has time to report other nearby sources.
+         *
+         * Then choose the strongest RSSI.
          */
-        private const val SCAN_WINDOW_MS =
+        private const val SOURCE_SELECTION_WINDOW_MS =
+            1_200L
+
+
+        /*
+         * If FMA120 reports nothing within this period,
+         * restart the scan.
+         */
+        private const val FMA_SCAN_WINDOW_MS =
             3_000L
 
 
         /*
-         * Pause between stopScan() and the next scan.
+         * Delay between:
+         *
+         * BC:BI=00
+         *
+         * and the next:
+         *
+         * BC:BI
          */
-        private const val SCAN_RESTART_DELAY_MS =
+        private const val FMA_SCAN_RESTART_DELAY_MS =
             300L
 
 
         /*
-         * Pause between stopping discovery and
-         * sending receive(source).
+         * Small application-side delay between
+         * stopScan() and receive().
          */
         private const val RECEIVE_AFTER_SCAN_DELAY_MS =
             250L
 
 
         /*
-         * Maximum time allowed for FMA120 to
-         * reach streaming after receive(source).
+         * Maximum time for FMA120 to reach:
+         *
+         * syncState = 02
+         * BIS != 0
          */
         private const val CONNECTION_TIMEOUT_MS =
             10_000L
 
 
         /*
-         * Wait before searching again after a
-         * connection/synchronisation failure.
+         * Retry delay when receive fails.
          */
         private const val CONNECTION_RETRY_DELAY_MS =
-            1_000L
+            700L
+
+
+        private const val MAX_CONNECTION_ATTEMPTS =
+            3
 
 
         /*
-         * Audio device discovery retry.
+         * Temporarily ignore a transmitter after
+         * three failed connection attempts.
          */
+        private const val FAILED_SOURCE_COOLDOWN_MS =
+            10_000L
+
+
+        /*
+         * When current streaming disappears, wait briefly
+         * before deciding that the transmitter was lost.
+         */
+        private const val STREAM_LOSS_CONFIRM_MS =
+            1_500L
+
+
+        /*
+         * Wait briefly before scanning for the next source.
+         */
+        private const val NEXT_SOURCE_SEARCH_DELAY_MS =
+            500L
+
+
         private const val AUDIO_RETRY_DELAY_MS =
             500L
 
