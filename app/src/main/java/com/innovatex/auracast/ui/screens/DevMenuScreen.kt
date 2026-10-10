@@ -23,7 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.innovatex.auracast.bluetooth.NRFBoardLink
-import com.innovatex.auracast.bluetooth.BoardState
+import com.innovatex.auracast.bluetooth.NRFBoardState
 import com.innovatex.auracast.ui.navigation.Accessibility
 import com.innovatex.auracast.ui.navigation.Arrived
 import com.innovatex.auracast.ui.navigation.Home
@@ -43,7 +43,7 @@ fun DevMenuScreen(
     val context = LocalContext.current
 
     var boardConnected by remember { mutableStateOf(false) }
-    var boardState by remember { mutableStateOf<BoardState?>(null) }
+    var boardState by remember { mutableStateOf<NRFBoardState?>(null) }
 
     val boardLink = remember {
         NRFBoardLink(

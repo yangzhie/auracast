@@ -3,7 +3,7 @@ package com.innovatex.auracast.bluetooth
 /**
  * Board's reported state, mirroring enum gatt_link_state.
  */
-enum class BoardState {
+enum class NRFBoardState {
     IDLE,
     SCANNING,
     CONNECTING,
@@ -13,6 +13,6 @@ enum class BoardState {
 
     companion object {
         // Converts a notified byte, or null if the board sent something unknown
-        fun fromByte(value: Int): BoardState? = entries.getOrNull(value)
+        fun fromByte(value: Int): NRFBoardState? = entries.getOrNull(value)
     }
 }

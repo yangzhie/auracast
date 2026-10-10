@@ -23,7 +23,7 @@ import java.util.UUID
 @SuppressLint("MissingPermission")
 class NRFBoardLink(
     private val context: Context,
-    private val onStateChanged: (BoardState) -> Unit,
+    private val onStateChanged: (NRFBoardState) -> Unit,
     private val onConnectionChanged: (Boolean) -> Unit
 ) {
 
@@ -195,7 +195,29 @@ class NRFBoardLink(
                 return
             }
 
+            /* Readiness is reported from onDescriptorWrite rather than here.
+             * Android serialises GATT operations, so a command written while
+             * the descriptor write is still in flight is rejected with
+             * GATT_WRITE_REQUEST_BUSY (201).
+             */
             enableStatusNotifications(g)
+        }
+
+        override fun onDescriptorWrite(
+            g: BluetoothGatt,
+            descriptor: BluetoothGattDescriptor,
+            status: Int
+        ) {
+            if (descriptor.uuid != CCC_UUID) {
+                return
+            }
+
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.w(TAG, "Failed to enable status notifications, status $status")
+                return
+            }
+
+            Log.i(TAG, "Status notifications confirmed, board ready")
             onConnectionChanged(true)
         }
 
@@ -208,7 +230,7 @@ class NRFBoardLink(
                 return
             }
 
-            val state = BoardState.fromByte(value[0].toInt() and 0xFF)
+            val state = NRFBoardState.fromByte(value[0].toInt() and 0xFF)
             if (state == null) {
                 Log.w(TAG, "Board reported an unknown state: ${value[0]}")
                 return

@@ -12,170 +12,178 @@ import com.innovatex.auracast.core.MatchDecision
 import com.innovatex.auracast.core.MatchingEngine
 import com.innovatex.auracast.data.TransitRoute
 
-// Journey driver - applies whatever MatchingEngine decides
+/**
+ * Drives a journey by telling the assistant board which stop to join and
+ * reacting to what it reports back.
+ */
 class JourneyViewModel : ViewModel() {
-    // Null until journey starts
+
+    // Null until a journey is started
     var state by mutableStateOf<JourneyState?>(null)
         private set
 
-    // Persistent scanner
-    private var scanner: BroadcastScanner? = null
+    // If the board is reachable for the UI to show
+    var boardConnected by mutableStateOf(false)
+        private set
 
-    // Detected transmitters
-    private val visible = mutableMapOf<String, DiscoveredBroadcast>()
+    private var boardLink: NRFBoardLink? = null
 
-    // Transmitter timeout
-    private val staleAfterMillis = 5_000L
+    private val tag = "JourneyViewModel"
 
-    // Starting of the journey
     fun startJourney(context: Context, route: TransitRoute) {
         if (state != null) {
             return
         }
 
+        val now = System.currentTimeMillis()
         val firstStop = route.stops.firstOrNull()
 
-        // State of journey at a given time
         state = JourneyState(
             route = route,
             currentStopIndex = 0,
-            // Check journey's phase
             phase = if (firstStop?.hasAuracast == true) {
                 JourneyPhase.SEARCHING
             } else {
-                JourneyPhase.AT_UNCOVERED
+                JourneyPhase.TRAVELLING
             },
-            deviceAddress = null,
-            phaseStartedAt = System.currentTimeMillis()
+            phaseStartedAt = now
         )
 
-        // PROBE - EXPERIMENTAL
-        BroadcastAssistantProbe.probe(context.applicationContext)
-
-        // Create BLE scanner
-        val newScanner = BroadcastScanner(
+        val link = NRFBoardLink(
             context = context.applicationContext,
-            onBroadcastFound = { result, metadata ->
-                onScanResult(
-                    address = result.device.address,
-                    name = result.scanRecord?.deviceName,
-                    rssi = result.rssi,
-                    metadata = metadata
-                )
+            onStateChanged = { onBoardStateChanged(it) },
+            onConnectionChanged = { connected ->
+                boardConnected = connected
+                if (connected) {
+                    // Board is ready, evaluate what to ask for first
+                    evaluate(NRFBoardState.IDLE)
+                }
             }
         )
 
-        // Start + update scanner
-        newScanner.start()
-        scanner = newScanner
+        boardLink = link
+        link.connect()
     }
 
-    // Complete journey, reset vars
     fun endJourney() {
-        leaveBroadcast()
-        scanner?.stop()
-        scanner = null
-        visible.clear()
+        boardLink?.requestStop(STOP_NONE)
+        boardLink?.disconnect()
+        boardLink = null
+        boardConnected = false
         state = null
     }
 
-    // Scanner's bg thread
-    private fun onScanResult(
-        address: String,
-        name: String?,
-        rssi: Int,
-        metadata: BroadcastMetadata
-    ) {
-        val now = System.currentTimeMillis()
-
-        visible[address] = DiscoveredBroadcast(
-            deviceAddress = address,
-            broadcastName = name,
-            rssi = rssi,
-            metadata = metadata,
-            lastSeenMillis = now
-        )
-
-        // If a transmitter has left, its reports stop
-        visible.entries.removeAll { now - it.value.lastSeenMillis > staleAfterMillis }
-
-        val current = state ?: return
-        val decision = MatchingEngine.decide(current, visible.values.toList(), now)
-
-        apply(decision, now)
+    // Called from BoardLink's GATT callback thread
+    private fun onBoardStateChanged(boardState: NRFBoardState) {
+        Log.i(tag, "Board reported $boardState")
+        evaluate(boardState)
     }
 
-    // Act of the machine engine's decision
-    private fun apply(decision: MatchDecision, now: Long) {
+    /**
+     * Runs the engine against the board's latest report and applies the
+     * decision. Called on every board state change, and once on connect.
+     */
+    private fun evaluate(boardState: NRFBoardState) {
+        val current = state ?: return
+        val now = System.currentTimeMillis()
+
+        val decision = MatchingEngine.decide(current, boardState, now)
+
+        Log.i(tag, "Decision: $decision")
+
+        apply(decision, boardState, now)
+    }
+
+    private fun apply(decision: MatchDecision, boardState: NRFBoardState, now: Long) {
         val current = state ?: return
 
         when (decision) {
             is MatchDecision.Connect -> {
-                joinBroadcast(decision.broadcast)
-                state = current.copy(
-                    deviceAddress = decision.broadcast.deviceAddress,
-                    phase = JourneyPhase.RECEIVING,
-                    phaseStartedAt = now
-                )
-            }
+                boardLink?.requestStop(decision.stopIndex)
 
-            MatchDecision.Disconnect -> {
-                leaveBroadcast()
                 state = current.copy(
-                    deviceAddress = null,
                     phase = JourneyPhase.SEARCHING,
-                    phaseStartedAt = now
+                    phaseStartedAt = now,
+                    lastBoardState = NRFBoardState.IDLE,
+                    requestSent = true
                 )
             }
 
             MatchDecision.Advance -> {
-                leaveBroadcast()
-
                 val nextIndex = current.currentStopIndex + 1
                 val nextStop = current.route.stops.getOrNull(nextIndex)
 
                 state = current.copy(
                     currentStopIndex = nextIndex,
-                    deviceAddress = null,
                     phase = if (nextStop?.hasAuracast == true) {
                         JourneyPhase.SEARCHING
                     } else {
-                        JourneyPhase.AT_UNCOVERED
+                        JourneyPhase.TRAVELLING
                     },
-                    phaseStartedAt = now
+                    phaseStartedAt = now,
+                    lastBoardState = NRFBoardState.IDLE,
+                    requestSent = false
+                )
+
+                /* The engine only runs on board reports, and the board has
+                 * nothing more to say until it is asked for something. Run
+                 * again so the new stop's request goes out now.
+                 */
+                evaluate(NRFBoardState.IDLE)
+            }
+
+            MatchDecision.Disconnect -> {
+                boardLink?.requestStop(STOP_NONE)
+
+                state = current.copy(
+                    phase = JourneyPhase.TRAVELLING,
+                    phaseStartedAt = now,
+                    lastBoardState = boardState,
+                    requestSent = false
                 )
             }
 
             MatchDecision.Fault -> {
                 state = current.copy(
                     phase = JourneyPhase.DROP_OUT,
-                    phaseStartedAt = now
+                    phaseStartedAt = now,
+                    lastBoardState = boardState,
+                    requestSent = false
                 )
             }
 
             MatchDecision.DoNothing -> {
-                // Nothing
+                val phase = phaseFor(boardState, current.phase)
+
+                state = current.copy(
+                    phase = phase,
+                    phaseStartedAt = if (phase != current.phase) now else current.phaseStartedAt,
+                    lastBoardState = boardState
+                )
             }
         }
     }
 
-    // TODO: PRIVILIEGED ROOT
-    private fun joinBroadcast(broadcast: DiscoveredBroadcast) {
-        Log.i("JourneyViewModel", "JOIN requested: ${broadcast.deviceAddress} " +
-                "(stop ${broadcast.metadata.stopIndex}, rssi ${broadcast.rssi})")
-
-        // The actual addSource() call needs a BluetoothLeBroadcastMetadata,
-        // which can't be built from a raw scan result — the assistant's own
-        // startSearchingForSources() supplies it. Both are privileged APIs.
-        // See BroadcastAssistantProbe for whether that route is open at all.
-    }
-
-    private fun leaveBroadcast() {
-        val address = state?.deviceAddress ?: return
-        Log.i("JourneyViewModel", "LEAVE requested: $address")
-    }
+    /**
+     * Maps what the board reports onto what the rider is shown. Board states
+     * with no journey meaning leave the current phase alone.
+     */
+    private fun phaseFor(boardState: NRFBoardState, currentPhase: JourneyPhase): JourneyPhase =
+        when (boardState) {
+            NRFBoardState.SCANNING -> JourneyPhase.SEARCHING
+            NRFBoardState.CONNECTING -> JourneyPhase.CONNECTING
+            NRFBoardState.RECEIVING -> JourneyPhase.RECEIVING
+            NRFBoardState.FAILED -> JourneyPhase.DROP_OUT
+            NRFBoardState.NO_SINK -> JourneyPhase.DROP_OUT
+            NRFBoardState.IDLE -> currentPhase
+        }
 
     override fun onCleared() {
         endJourney()
+    }
+
+    private companion object {
+        // Board treats 0 as "stop listening"
+        const val STOP_NONE = 0
     }
 }
