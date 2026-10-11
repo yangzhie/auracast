@@ -1,61 +1,79 @@
 package com.innovatex.auracast.core
 
-import com.innovatex.auracast.bluetooth.NRFBoardState
+import com.innovatex.auracast.bluetooth.DiscoveredBroadcast
+import com.innovatex.auracast.data.Stop
 
 /**
- * Decides what to ask the board for next, based on where the rider is in
- * their journey and what the board last reported.
+ * Decides which stop's broadcast the board should be joined to, based on
+ * which transmitters the phone can currently hear.
+ *
+ * A transmitter only reaches its own platform, so hearing one is taken as
+ * the rider being at that stop. The expected next stop is preferred, but
+ * any project transmitter with a strong signal is accepted — a rider may
+ * board mid-route, skip a stop, or pass one that was never fitted.
+ *
+ * Pure logic: no Android APIs, no side effects.
  */
 object MatchingEngine {
 
-    // How long to wait for the board to reach a stop before giving up
-    const val JOIN_TIMEOUT_MILLIS = 15_000L
+    /**
+     * A transmitter weaker than this is treated as overheard from
+     * somewhere else rather than as the rider's current stop.
+     */
+    const val MIN_ACCEPTABLE_RSSI = -85
 
     fun decide(
         state: JourneyState,
-        boardState: NRFBoardState,
+        visible: List<DiscoveredBroadcast>,
         nowMillis: Long
     ): MatchDecision {
-
         if (state.isJourneyOver) {
             return MatchDecision.DoNothing
         }
 
-        val targetStop = state.currentTargetStop ?: return MatchDecision.DoNothing
+        val onRoute = visible.filter { belongsToRoute(it, state.route.stops) }
 
-        // The board has no sink, nothing can be joined until it does
-        if (boardState == NRFBoardState.NO_SINK) {
+        /* Still hearing what we are joined to — the rider has not moved on. */
+        val joined = state.joinedStopIndex
+        if (joined != null && onRoute.any { it.metadata.stopIndex == joined }) {
             return MatchDecision.DoNothing
         }
 
-        // Stop has no transmitter
-        if (!targetStop.hasAuracast) {
-            return MatchDecision.Advance
+        /* The stop the journey expects next, if we can hear it. */
+        val expected = state.currentTargetStop
+        if (expected != null) {
+            val match = onRoute.firstOrNull { StopMatcher.matches(it.metadata, expected) }
+
+            if (match != null) {
+                return MatchDecision.Connect(match.metadata.stopIndex)
+            }
         }
 
-        // Nothing requested for this stop right now
-        if (!state.requestSent) {
-            val broadcast = targetStop.broadcast ?: return MatchDecision.DoNothing
-            return MatchDecision.Connect(broadcast.stopIndex)
+        /* Not the expected stop, but something on this route is close enough
+         * to be where the rider actually is.
+         */
+        val strongest = onRoute
+            .filter { it.rssi >= MIN_ACCEPTABLE_RSSI }
+            .maxByOrNull { it.rssi }
+
+        if (strongest != null) {
+            return MatchDecision.Connect(strongest.metadata.stopIndex)
         }
 
-        // Rider was hearing this stop and no longer is; moved on
-        if (state.lastBoardState == NRFBoardState.RECEIVING &&
-            boardState != NRFBoardState.RECEIVING
-        ) {
-            return MatchDecision.Advance
-        }
-
-        if (boardState == NRFBoardState.FAILED) {
-            return MatchDecision.Fault
-        }
-
-        // Asked, but the board has not reached the stop within the timeout
-        val waitedFor = nowMillis - state.phaseStartedAt
-        if (boardState != NRFBoardState.RECEIVING && waitedFor >= JOIN_TIMEOUT_MILLIS) {
-            return MatchDecision.Fault
+        /* Nothing audible. If something was playing, the rider has left. */
+        if (joined != null) {
+            return MatchDecision.Disconnect
         }
 
         return MatchDecision.DoNothing
     }
+
+    /**
+     * Whether a transmitter belongs to any stop on this route. Guards
+     * against joining another route's announcements at an interchange.
+     */
+    private fun belongsToRoute(
+        broadcast: DiscoveredBroadcast,
+        stops: List<Stop>
+    ): Boolean = stops.any { StopMatcher.matches(broadcast.metadata, it) }
 }

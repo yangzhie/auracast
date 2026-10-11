@@ -18,8 +18,7 @@ data class JourneyState(
     val currentStopIndex: Int,
     val phase: JourneyPhase,
     val phaseStartedAt: Long,
-    val lastBoardState: NRFBoardState = NRFBoardState.IDLE, // Change can be detected
-    val requestSent: Boolean = false
+    val joinedStopIndex: Int? = null   // transmitter stop index currently requested
 ) {
     // Stop at currentStopIndex
     val currentTargetStop: Stop?

@@ -10,12 +10,6 @@ sealed interface MatchDecision {
     // Disconnect from the current broadcast
     data object Disconnect : MatchDecision
 
-    // Move onto the next broadcast
-    data object Advance : MatchDecision
-
     // Nothing has changed
     data object DoNothing : MatchDecision
-
-    // Returns an error
-    data object Fault : MatchDecision
 }
