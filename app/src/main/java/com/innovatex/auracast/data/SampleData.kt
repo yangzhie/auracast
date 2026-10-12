@@ -1,13 +1,16 @@
 package com.innovatex.auracast.data
 
 object SampleData {
+
+    /*
+     * Demo route: four fitted stops, modelled with nothing between them.
+     * The real 86 has unfitted stops in between, but the app can only
+     * observe the rider where a transmitter is present.
+     */
     private val route86Outbound = listOf(
         Stop("s8", "Parliament", "Stop 8 · Spring St", BroadcastIdentity(86, 1)),
-        Stop("s10", "Nicholson Street", "Stop 10 · Gertrude St", null),
         Stop("s12", "Gertrude Street", "Stop 12 · Smith St", BroadcastIdentity(86, 2)),
-        Stop("s13", "Langridge Street", "Stop 13 · Smith St", null),
         Stop("s15", "Johnston Street", "Stop 15 · Smith St", BroadcastIdentity(86, 3)),
-        Stop("s17", "Leicester Street", "Stop 17 · Smith St", null),
         Stop("s20", "Westgarth Street", "Stop 20 · High St", BroadcastIdentity(86, 4))
     )
 

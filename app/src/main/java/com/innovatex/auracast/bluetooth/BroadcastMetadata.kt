@@ -6,5 +6,4 @@ data class BroadcastMetadata(
     val stopIndex: Int,
     val direction: Int,
     val language: Int,
-    val audioID: Int
 ) {}

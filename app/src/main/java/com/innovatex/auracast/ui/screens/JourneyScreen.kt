@@ -129,6 +129,13 @@ fun JourneyScreen(
                     style = BandStyles.Searching
                 )
 
+                JourneyPhase.CONNECTING -> StatusBand(
+                    kicker = "Connecting",
+                    headline = currentStop.name,
+                    detail = "Joining this stop's announcements.",
+                    style = BandStyles.Searching
+                )
+
                 JourneyPhase.RECEIVING -> StatusBand(
                     kicker = "Receiving",
                     headline = currentStop.name,
@@ -203,6 +210,7 @@ private fun stopStateFor(
 
         stop.id == currentStop.id -> when (phase) {
             JourneyPhase.SEARCHING -> StopState.SEARCHING
+            JourneyPhase.CONNECTING -> StopState.SEARCHING
             JourneyPhase.RECEIVING -> StopState.RECEIVING
             JourneyPhase.AT_UNCOVERED -> StopState.AT_UNCOVERED
             JourneyPhase.TRAVELLING -> StopState.PASSED

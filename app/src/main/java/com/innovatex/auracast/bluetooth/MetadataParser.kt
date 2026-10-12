@@ -4,7 +4,7 @@ object MetadataParser {
     public const val COMPANY_ID = 0xFFFF // Reserved ID for testing purposes
     private const val MAGIC_A = 0x41 // A
     private const val MAGIC_U = 0x55 // U
-    private const val MIN_LEN = 9 // Payload's length
+    private const val MIN_LEN = 8 // Payload's length
     private const val SUPPORTED_VER = 1 // Current version
 
     // Parsing
@@ -30,7 +30,6 @@ object MetadataParser {
             stopIndex = byteAt(data, 5),
             direction = byteAt(data, 6),
             language = byteAt(data, 7),
-            audioID = byteAt(data, 8)
         )
 
         return payload

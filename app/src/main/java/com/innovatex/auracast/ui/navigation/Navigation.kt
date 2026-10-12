@@ -105,7 +105,6 @@ fun Navigation(
                     route = SampleData.routeById(args.routeId),
                     currentStopIndex = args.stopIndex,
                     phase = JourneyPhase.valueOf(args.phaseName),
-                    deviceAddress = null,
                     phaseStartedAt = 0L
                 )
             )
